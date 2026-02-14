@@ -1,0 +1,38 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/fredericrous/cluster-vision
+  tag: ""  # defaults to appVersion
+  pullPolicy: IfNotPresent
+
+api:
+  port: 8080
+
+web:
+  port: 3000
+
+service:
+  type: ClusterIP
+  port: 3000
+
+serviceAccount:
+  create: true
+  name: ""
+
+rbac:
+  create: true
+
+tfstate:
+  enabled: false
+  path: /data/terraform.tfstate
+  # Mount from a PVC, ConfigMap, or external volume
+  existingClaim: ""
+
+refresh: 5m
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
