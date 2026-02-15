@@ -16,7 +16,7 @@ rules:
     resources: ["gateways", "httproutes"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["gateway.envoyproxy.io"]
-    resources: ["securitypolicies"]
+    resources: ["securitypolicies", "clienttrafficpolicies"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["networking.istio.io"]
     resources: ["serviceentries"]
