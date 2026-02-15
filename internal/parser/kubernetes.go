@@ -18,13 +18,14 @@ import (
 
 // KubernetesParser queries the Kubernetes API for cluster state.
 type KubernetesParser struct {
-	typed   kubernetes.Interface
-	dynamic dynamic.Interface
+	typed       kubernetes.Interface
+	dynamic     dynamic.Interface
+	clusterName string
 }
 
-// NewKubernetesParser creates a parser from a kubeconfig path.
-// Pass "" for in-cluster config.
-func NewKubernetesParser(kubeconfig string) (*KubernetesParser, error) {
+// NewKubernetesParser creates a parser from a kubeconfig path and cluster name.
+// Pass "" for kubeconfig to use in-cluster config.
+func NewKubernetesParser(kubeconfig, clusterName string) (*KubernetesParser, error) {
 	var cfg *rest.Config
 	var err error
 
@@ -47,7 +48,12 @@ func NewKubernetesParser(kubeconfig string) (*KubernetesParser, error) {
 		return nil, fmt.Errorf("creating dynamic client: %w", err)
 	}
 
-	return &KubernetesParser{typed: typed, dynamic: dyn}, nil
+	return &KubernetesParser{typed: typed, dynamic: dyn, clusterName: clusterName}, nil
+}
+
+// ParseSecurity returns only namespace and security policy data for this cluster.
+func (p *KubernetesParser) ParseSecurity(ctx context.Context) ([]model.NamespaceInfo, []model.SecurityPolicyInfo) {
+	return p.parseNamespaces(ctx), p.parseSecurityPolicies(ctx)
 }
 
 // ParseAll queries all supported resources and returns cluster data.
@@ -296,6 +302,7 @@ func (p *KubernetesParser) parseNamespaces(ctx context.Context) []model.Namespac
 
 		result = append(result, model.NamespaceInfo{
 			Name:        name,
+			Cluster:     p.clusterName,
 			Ambient:     labels["istio.io/dataplane-mode"] == "ambient",
 			Waypoint:    labels["istio.io/use-waypoint"] != "",
 			Backup:      labels["backup"] == "velero",
@@ -327,6 +334,7 @@ func (p *KubernetesParser) parseSecurityPolicies(ctx context.Context) []model.Se
 			result = append(result, model.SecurityPolicyInfo{
 				Name:      item.GetName(),
 				Namespace: item.GetNamespace(),
+				Cluster:   p.clusterName,
 			})
 		}
 	}

@@ -19,30 +19,34 @@ func GenerateSecurity(data *model.ClusterData) model.DiagramResult {
 		}
 	}
 
-	// Build set of namespaces with ext-auth policies
+	// Build set of namespaces with ext-auth policies (keyed by cluster/namespace)
 	extAuthNS := make(map[string]bool)
 	for _, sp := range data.SecurityPolicies {
-		extAuthNS[sp.Namespace] = true
+		extAuthNS[sp.Cluster+"/"+sp.Namespace] = true
 	}
 
 	sorted := make([]model.NamespaceInfo, len(data.Namespaces))
 	copy(sorted, data.Namespaces)
 	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Cluster != sorted[j].Cluster {
+			return sorted[i].Cluster < sorted[j].Cluster
+		}
 		return sorted[i].Name < sorted[j].Name
 	})
 
 	var b strings.Builder
 
 	// Table
-	b.WriteString("| Namespace | Istio Ambient | mTLS | Ext Auth | Backup | Pod Security |\n")
-	b.WriteString("|-----------|:---:|:---:|:---:|:---:|:---:|\n")
+	b.WriteString("| Cluster | Namespace | Istio Ambient | mTLS | Ext Auth | Backup | Pod Security |\n")
+	b.WriteString("|---------|-----------|:---:|:---:|:---:|:---:|:---:|\n")
 
 	var ambientCount, mtlsCount, authCount, backupCount int
 
 	for _, ns := range sorted {
+		nsKey := ns.Cluster + "/" + ns.Name
 		ambient := boolIcon(ns.Ambient)
 		mtls := boolIcon(ns.MTLS)
-		auth := boolIcon(extAuthNS[ns.Name])
+		auth := boolIcon(extAuthNS[nsKey])
 		backup := boolIcon(ns.Backup)
 		podSec := ns.PodSecurity
 		if podSec == "" {
@@ -55,15 +59,15 @@ func GenerateSecurity(data *model.ClusterData) model.DiagramResult {
 		if ns.MTLS {
 			mtlsCount++
 		}
-		if extAuthNS[ns.Name] {
+		if extAuthNS[nsKey] {
 			authCount++
 		}
 		if ns.Backup {
 			backupCount++
 		}
 
-		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
-			ns.Name, ambient, mtls, auth, backup, podSec))
+		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s |\n",
+			ns.Cluster, ns.Name, ambient, mtls, auth, backup, podSec))
 	}
 
 	// Coverage pie chart

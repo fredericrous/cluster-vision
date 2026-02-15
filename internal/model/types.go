@@ -116,6 +116,7 @@ type BackendRef struct {
 // NamespaceInfo holds security-relevant labels from a namespace.
 type NamespaceInfo struct {
 	Name        string
+	Cluster     string
 	Ambient     bool
 	Waypoint    bool
 	Backup      bool
@@ -127,6 +128,7 @@ type NamespaceInfo struct {
 type SecurityPolicyInfo struct {
 	Name      string
 	Namespace string
+	Cluster   string
 }
 
 // TerraformNode represents a VM parsed from Terraform state.

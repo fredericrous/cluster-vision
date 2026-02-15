@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -19,26 +20,51 @@ import (
 type Config struct {
 	Port            int
 	Kubeconfig      string
+	ClusterName     string
 	DataSources     []model.DataSource
 	RefreshInterval time.Duration
 }
 
 // Server serves the diagram API.
 type Server struct {
-	cfg     Config
-	k8s     *parser.KubernetesParser
-	mu      sync.RWMutex
-	data    []model.DiagramResult
-	lastGen time.Time
+	cfg        Config
+	k8sParsers []*parser.KubernetesParser
+	mu         sync.RWMutex
+	data       []model.DiagramResult
+	lastGen    time.Time
 }
 
 // New creates a new Server.
 func New(cfg Config) (*Server, error) {
-	k8s, err := parser.NewKubernetesParser(cfg.Kubeconfig)
+	if cfg.ClusterName == "" {
+		cfg.ClusterName = "Homelab"
+	}
+
+	k8s, err := parser.NewKubernetesParser(cfg.Kubeconfig, cfg.ClusterName)
 	if err != nil {
 		return nil, fmt.Errorf("creating k8s parser: %w", err)
 	}
-	return &Server{cfg: cfg, k8s: k8s}, nil
+
+	parsers := []*parser.KubernetesParser{k8s}
+
+	for _, ds := range cfg.DataSources {
+		if ds.Type != "kubernetes" {
+			continue
+		}
+		if _, err := os.Stat(ds.Path); err != nil {
+			slog.Warn("skipping kubernetes data source: kubeconfig not readable", "name", ds.Name, "path", ds.Path, "error", err)
+			continue
+		}
+		p, err := parser.NewKubernetesParser(ds.Path, ds.Name)
+		if err != nil {
+			slog.Warn("skipping kubernetes data source: failed to create parser", "name", ds.Name, "error", err)
+			continue
+		}
+		parsers = append(parsers, p)
+		slog.Info("added kubernetes data source", "name", ds.Name)
+	}
+
+	return &Server{cfg: cfg, k8sParsers: parsers}, nil
 }
 
 // Start begins serving HTTP and starts the background refresh loop.
@@ -86,10 +112,38 @@ func (s *Server) refresh(ctx context.Context) {
 	slog.Info("refreshing cluster data")
 	start := time.Now()
 
-	clusterData := s.k8s.ParseAll(ctx)
+	// Primary cluster — full data
+	clusterData := s.k8sParsers[0].ParseAll(ctx)
 
-	// Resolve each data source
+	// Additional clusters — security data only
+	for _, p := range s.k8sParsers[1:] {
+		ns, sp := p.ParseSecurity(ctx)
+		clusterData.Namespaces = append(clusterData.Namespaces, ns...)
+		clusterData.SecurityPolicies = append(clusterData.SecurityPolicies, sp...)
+	}
+
+	// Sort namespaces and security policies deterministically
+	sort.Slice(clusterData.Namespaces, func(i, j int) bool {
+		if clusterData.Namespaces[i].Cluster != clusterData.Namespaces[j].Cluster {
+			return clusterData.Namespaces[i].Cluster < clusterData.Namespaces[j].Cluster
+		}
+		return clusterData.Namespaces[i].Name < clusterData.Namespaces[j].Name
+	})
+	sort.Slice(clusterData.SecurityPolicies, func(i, j int) bool {
+		if clusterData.SecurityPolicies[i].Cluster != clusterData.SecurityPolicies[j].Cluster {
+			return clusterData.SecurityPolicies[i].Cluster < clusterData.SecurityPolicies[j].Cluster
+		}
+		if clusterData.SecurityPolicies[i].Namespace != clusterData.SecurityPolicies[j].Namespace {
+			return clusterData.SecurityPolicies[i].Namespace < clusterData.SecurityPolicies[j].Namespace
+		}
+		return clusterData.SecurityPolicies[i].Name < clusterData.SecurityPolicies[j].Name
+	})
+
+	// Resolve each infra data source (tfstate, docker-compose)
 	for _, ds := range s.cfg.DataSources {
+		if ds.Type == "kubernetes" {
+			continue
+		}
 		src, err := resolveDataSource(ds)
 		if err != nil {
 			slog.Warn("failed to resolve data source", "name", ds.Name, "error", err)

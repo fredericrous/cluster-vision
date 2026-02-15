@@ -22,6 +22,9 @@ serviceAccount:
 rbac:
   create: true
 
+# Name of the local cluster (shown in security table). Defaults to "Homelab" in code.
+clusterName: ""
+
 # Infrastructure data sources — each is mounted from a Kubernetes Secret.
 # Use ExternalSecrets to sync from Vault, then reference the secret here.
 dataSources: []

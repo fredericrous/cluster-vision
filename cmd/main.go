@@ -25,6 +25,9 @@ func main() {
 	if v := os.Getenv("KUBECONFIG"); v != "" && cfg.Kubeconfig == "" {
 		cfg.Kubeconfig = v
 	}
+	if v := os.Getenv("CLUSTER_NAME"); v != "" {
+		cfg.ClusterName = v
+	}
 
 	// Data sources from env
 	if v := os.Getenv("DATA_SOURCES"); v != "" {

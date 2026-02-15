@@ -25,6 +25,10 @@ spec:
               value: "{{ .Values.api.port }}"
             - name: REFRESH_INTERVAL
               value: "{{ .Values.refresh }}"
+            {{- if .Values.clusterName }}
+            - name: CLUSTER_NAME
+              value: "{{ .Values.clusterName }}"
+            {{- end }}
             {{- if .Values.dataSources }}
             - name: DATA_SOURCES
               value: {{ include "cluster-vision.dataSourcesJSON" . | quote }}
