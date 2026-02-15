@@ -58,3 +58,15 @@ Create the name of the service account to use.
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Build DATA_SOURCES JSON from dataSources values with computed mount paths.
+*/}}
+{{- define "cluster-vision.dataSourcesJSON" -}}
+{{- $sources := list -}}
+{{- range $i, $ds := .Values.dataSources -}}
+{{- $source := dict "name" $ds.name "type" $ds.type "path" (printf "/data/source-%d/data" $i) -}}
+{{- $sources = append $sources $source -}}
+{{- end -}}
+{{- $sources | toJson -}}
+{{- end -}}

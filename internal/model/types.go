@@ -11,20 +11,12 @@ type ClusterData struct {
 	InfraSources     []InfraSource
 }
 
-// DataSource defines where to fetch infrastructure data from.
+// DataSource defines where to read infrastructure data from.
+// The file is expected to be mounted from a Kubernetes Secret (e.g. via ExternalSecrets from Vault).
 type DataSource struct {
-	Name   string        `json:"name"`
-	Type   string        `json:"type"`   // "tfstate" | "docker-compose"
-	Path   string        `json:"path"`   // local file path (optional)
-	GitHub *GitHubSource `json:"github"` // fetch from GitHub (optional)
-}
-
-// GitHubSource defines how to fetch a file from GitHub.
-type GitHubSource struct {
-	Repo      string `json:"repo"`      // "owner/repo"
-	FilePath  string `json:"filePath"`  // path in repo
-	Ref       string `json:"ref"`       // branch/tag, default "main"
-	TokenFile string `json:"tokenFile"` // path to file with PAT
+	Name string `json:"name"`
+	Type string `json:"type"` // "tfstate" | "docker-compose"
+	Path string `json:"path"` // path to the mounted file
 }
 
 // InfraSource holds parsed infrastructure data from one source.

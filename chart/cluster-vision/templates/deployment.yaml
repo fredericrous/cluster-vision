@@ -27,7 +27,7 @@ spec:
               value: "{{ .Values.refresh }}"
             {{- if .Values.dataSources }}
             - name: DATA_SOURCES
-              value: {{ .Values.dataSources | toJson | quote }}
+              value: {{ include "cluster-vision.dataSourcesJSON" . | quote }}
             {{- end }}
           ports:
             - name: web
@@ -58,19 +58,22 @@ spec:
             timeoutSeconds: 10
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if .Values.githubToken.secretName }}
+          {{- if .Values.dataSources }}
           volumeMounts:
-            - name: github-token
-              mountPath: {{ .Values.githubToken.mountPath }}
-              subPath: token
+            {{- range $i, $ds := .Values.dataSources }}
+            - name: source-{{ $i }}
+              mountPath: /data/source-{{ $i }}
               readOnly: true
+            {{- end }}
           {{- end }}
-      {{- if .Values.githubToken.secretName }}
+      {{- if .Values.dataSources }}
       volumes:
-        - name: github-token
+        {{- range $i, $ds := .Values.dataSources }}
+        - name: source-{{ $i }}
           secret:
-            secretName: {{ .Values.githubToken.secretName }}
+            secretName: {{ $ds.secret.name }}
             items:
-              - key: {{ .Values.githubToken.secretKey }}
-                path: token
+              - key: {{ $ds.secret.key }}
+                path: data
+        {{- end }}
       {{- end }}

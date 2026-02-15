@@ -153,19 +153,12 @@ func resolveDataSource(ds model.DataSource) (*model.InfraSource, error) {
 	return src, nil
 }
 
-// fetchSourceData gets raw bytes from a data source (file or GitHub).
+// fetchSourceData reads raw bytes from a mounted file.
 func fetchSourceData(ds model.DataSource) ([]byte, error) {
-	if ds.GitHub != nil {
-		return parser.FetchGitHubFile(ds.GitHub)
+	if ds.Path == "" {
+		return nil, fmt.Errorf("data source %q has no path configured", ds.Name)
 	}
-	if ds.Path != "" {
-		data, err := os.ReadFile(ds.Path)
-		if err != nil {
-			return nil, err
-		}
-		return data, nil
-	}
-	return nil, fmt.Errorf("data source %q has no path or github config", ds.Name)
+	return os.ReadFile(ds.Path)
 }
 
 func (s *Server) handleDiagrams(w http.ResponseWriter, r *http.Request) {

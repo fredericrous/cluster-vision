@@ -22,29 +22,20 @@ serviceAccount:
 rbac:
   create: true
 
+# Infrastructure data sources — each is mounted from a Kubernetes Secret.
+# Use ExternalSecrets to sync from Vault, then reference the secret here.
 dataSources: []
-# Example with GitHub source:
 # dataSources:
 #   - name: Homelab
-#     type: tfstate
-#     github:
-#       repo: fredericrous/homelab
-#       filePath: infrastructure/homelab/terraform.tfstate
-#       ref: main
-#       tokenFile: /secrets/github-token
+#     type: tfstate           # "tfstate" or "docker-compose"
+#     secret:
+#       name: infra-tfstate   # K8s Secret name
+#       key: terraform.tfstate # key within the Secret
 #   - name: NAS
 #     type: docker-compose
-#     github:
-#       repo: fredericrous/homelab
-#       filePath: infrastructure/nas/docker-compose.yaml
-#       ref: main
-#       tokenFile: /secrets/github-token
-
-# Token secret to mount (optional, for GitHub sources)
-githubToken:
-  secretName: ""    # e.g. "cluster-vars"
-  secretKey: ""     # e.g. "GHCR_TOKEN"
-  mountPath: /secrets/github-token
+#     secret:
+#       name: infra-docker-compose
+#       key: docker-compose.yaml
 
 refresh: 5m
 
