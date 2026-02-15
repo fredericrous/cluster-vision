@@ -250,15 +250,22 @@ func generateMeshTopology(data *model.ClusterData) *model.DiagramResult {
 	var b strings.Builder
 	b.WriteString("graph TB\n")
 
-	// Local cluster subgraph
-	localName := networkName(localNetwork)
-	b.WriteString(fmt.Sprintf("  subgraph local[\"%s\"]\n", localName))
-	for i, gw := range data.EastWestGateways {
-		gwID := fmt.Sprintf("ewgw_l%d", i)
-		label := fmt.Sprintf("East-West Gateway<br/>%s:%d", gw.IP, gw.Port)
-		b.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", gwID, label))
+	hasLocalGW := len(data.EastWestGateways) > 0
+
+	// Local cluster subgraph (only if gateways exist)
+	if hasLocalGW {
+		localName := networkName(localNetwork)
+		if localName == "" {
+			localName = "Local"
+		}
+		b.WriteString(fmt.Sprintf("  subgraph local[\"%s\"]\n", localName))
+		for i, gw := range data.EastWestGateways {
+			gwID := fmt.Sprintf("ewgw_l%d", i)
+			label := fmt.Sprintf("East-West Gateway<br/>%s:%d", gw.IP, gw.Port)
+			b.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", gwID, label))
+		}
+		b.WriteString("  end\n")
 	}
-	b.WriteString("  end\n")
 
 	// Remote cluster subgraphs
 	remoteIdx := 0
@@ -277,8 +284,10 @@ func generateMeshTopology(data *model.ClusterData) *model.DiagramResult {
 	}
 
 	// mTLS tunnel links between local and remote gateways
-	for _, remoteGwID := range remoteGwIDs {
-		b.WriteString(fmt.Sprintf("  ewgw_l0 <-->|\"mTLS tunnel<br/>port 15443\"| %s\n", remoteGwID))
+	if hasLocalGW {
+		for _, remoteGwID := range remoteGwIDs {
+			b.WriteString(fmt.Sprintf("  ewgw_l0 <-->|\"mTLS tunnel<br/>port 15443\"| %s\n", remoteGwID))
+		}
 	}
 
 	// Cross-cluster services subgraph
@@ -294,7 +303,9 @@ func generateMeshTopology(data *model.ClusterData) *model.DiagramResult {
 		// Arrows: local gateway → service → remote gateway
 		for i, se := range crossCluster {
 			seID := fmt.Sprintf("se%d", i)
-			b.WriteString(fmt.Sprintf("  ewgw_l0 --> %s\n", seID))
+			if hasLocalGW {
+				b.WriteString(fmt.Sprintf("  ewgw_l0 --> %s\n", seID))
+			}
 			if rgw, ok := remoteGwIDs[se.Network]; ok {
 				b.WriteString(fmt.Sprintf("  %s --> %s\n", seID, rgw))
 			}
