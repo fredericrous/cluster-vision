@@ -9,6 +9,26 @@ type ClusterData struct {
 	Namespaces       []NamespaceInfo
 	SecurityPolicies []SecurityPolicyInfo
 	InfraSources     []InfraSource
+	ServiceEntries   []ServiceEntryInfo
+	EastWestGateways []EastWestGateway
+}
+
+// ServiceEntryInfo represents an Istio ServiceEntry resource.
+type ServiceEntryInfo struct {
+	Name            string
+	Namespace       string
+	Hosts           []string
+	Location        string // "MESH_EXTERNAL" etc
+	EndpointAddress string // remote gateway IP
+	Network         string // e.g. "nas-network" from endpoint label
+}
+
+// EastWestGateway represents an Istio east-west gateway Service.
+type EastWestGateway struct {
+	Name    string
+	IP      string
+	Port    int
+	Network string // from service label topology.istio.io/network
 }
 
 // DataSource defines where to read infrastructure data from.

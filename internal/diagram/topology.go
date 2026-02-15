@@ -20,6 +20,12 @@ func GenerateTopologySections(data *model.ClusterData) []model.DiagramResult {
 	}
 
 	var results []model.DiagramResult
+
+	// Mesh topology first (east-west gateways + cross-cluster services)
+	if mesh := generateMeshTopology(data); mesh != nil {
+		results = append(results, *mesh)
+	}
+
 	for _, src := range data.InfraSources {
 		id := "topology-" + sanitizeID(src.Name)
 		switch src.Type {
@@ -196,6 +202,108 @@ func generateK8sOnlyTopology(data *model.ClusterData) model.DiagramResult {
 	return model.DiagramResult{
 		ID:      "topology",
 		Title:   "Physical Topology",
+		Type:    "mermaid",
+		Content: b.String(),
+	}
+}
+
+func generateMeshTopology(data *model.ClusterData) *model.DiagramResult {
+	// Filter to MESH_EXTERNAL service entries (cross-cluster)
+	var crossCluster []model.ServiceEntryInfo
+	for _, se := range data.ServiceEntries {
+		if se.Location == "MESH_EXTERNAL" && se.Network != "" {
+			crossCluster = append(crossCluster, se)
+		}
+	}
+
+	if len(data.EastWestGateways) == 0 && len(crossCluster) == 0 {
+		return nil
+	}
+
+	// Build network-to-name map from InfraSources
+	networkName := func(network string) string {
+		for _, src := range data.InfraSources {
+			if sanitizeID(src.Name) == sanitizeID(network) || strings.EqualFold(src.Name, network) {
+				return src.Name
+			}
+		}
+		// Derive friendly name: "nas-network" → "NAS"
+		name := strings.TrimSuffix(network, "-network")
+		return strings.ToUpper(name)
+	}
+
+	// Determine local network from east-west gateways
+	localNetwork := ""
+	for _, gw := range data.EastWestGateways {
+		localNetwork = gw.Network
+		break
+	}
+
+	// Collect remote networks from service entries
+	remoteNetworks := make(map[string]string) // network → gateway IP
+	for _, se := range crossCluster {
+		if se.Network != localNetwork {
+			remoteNetworks[se.Network] = se.EndpointAddress
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("graph TB\n")
+
+	// Local cluster subgraph
+	localName := networkName(localNetwork)
+	b.WriteString(fmt.Sprintf("  subgraph local[\"%s\"]\n", localName))
+	for i, gw := range data.EastWestGateways {
+		gwID := fmt.Sprintf("ewgw_l%d", i)
+		label := fmt.Sprintf("East-West Gateway<br/>%s:%d", gw.IP, gw.Port)
+		b.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", gwID, label))
+	}
+	b.WriteString("  end\n")
+
+	// Remote cluster subgraphs
+	remoteIdx := 0
+	remoteGwIDs := make(map[string]string) // network → mermaid ID
+	for network, ip := range remoteNetworks {
+		remoteName := networkName(network)
+		subID := fmt.Sprintf("remote%d", remoteIdx)
+		gwID := fmt.Sprintf("ewgw_r%d", remoteIdx)
+		remoteGwIDs[network] = gwID
+
+		b.WriteString(fmt.Sprintf("  subgraph %s[\"%s\"]\n", subID, remoteName))
+		label := fmt.Sprintf("East-West Gateway<br/>%s:15443", ip)
+		b.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", gwID, label))
+		b.WriteString("  end\n")
+		remoteIdx++
+	}
+
+	// mTLS tunnel links between local and remote gateways
+	for _, remoteGwID := range remoteGwIDs {
+		b.WriteString(fmt.Sprintf("  ewgw_l0 <-->|\"mTLS tunnel<br/>port 15443\"| %s\n", remoteGwID))
+	}
+
+	// Cross-cluster services subgraph
+	if len(crossCluster) > 0 {
+		b.WriteString("  subgraph xcluster[\"Cross-Cluster Services\"]\n")
+		for i, se := range crossCluster {
+			seID := fmt.Sprintf("se%d", i)
+			host := strings.Join(se.Hosts, ", ")
+			b.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", seID, host))
+		}
+		b.WriteString("  end\n")
+
+		// Arrows: local gateway → service → remote gateway
+		for i, se := range crossCluster {
+			seID := fmt.Sprintf("se%d", i)
+			b.WriteString(fmt.Sprintf("  ewgw_l0 --> %s\n", seID))
+			if rgw, ok := remoteGwIDs[se.Network]; ok {
+				b.WriteString(fmt.Sprintf("  %s --> %s\n", seID, rgw))
+			}
+		}
+	}
+
+	return &model.DiagramResult{
+		ID:      "topology-mesh",
+		Title:   "Mesh Topology",
 		Type:    "mermaid",
 		Content: b.String(),
 	}

@@ -59,6 +59,8 @@ func (p *KubernetesParser) ParseAll(ctx context.Context) *model.ClusterData {
 	data.HTTPRoutes = p.parseHTTPRoutes(ctx)
 	data.Namespaces = p.parseNamespaces(ctx)
 	data.SecurityPolicies = p.parseSecurityPolicies(ctx)
+	data.ServiceEntries = p.parseServiceEntries(ctx)
+	data.EastWestGateways = p.parseEastWestGateways(ctx)
 	return data
 }
 
@@ -327,6 +329,95 @@ func (p *KubernetesParser) parseSecurityPolicies(ctx context.Context) []model.Se
 				Namespace: item.GetNamespace(),
 			})
 		}
+	}
+	return result
+}
+
+func (p *KubernetesParser) parseServiceEntries(ctx context.Context) []model.ServiceEntryInfo {
+	gvr := schema.GroupVersionResource{
+		Group:    "networking.istio.io",
+		Version:  "v1",
+		Resource: "serviceentries",
+	}
+
+	list, err := p.dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		slog.Debug("failed to list serviceentries (CRD may not exist)", "error", err)
+		return nil
+	}
+
+	var result []model.ServiceEntryInfo
+	for _, item := range list.Items {
+		spec, _ := item.Object["spec"].(map[string]interface{})
+
+		var hosts []string
+		if hs, ok := spec["hosts"].([]interface{}); ok {
+			for _, h := range hs {
+				if s, ok := h.(string); ok {
+					hosts = append(hosts, s)
+				}
+			}
+		}
+
+		location, _ := spec["location"].(string)
+
+		var endpointAddr, network string
+		if endpoints, ok := spec["endpoints"].([]interface{}); ok && len(endpoints) > 0 {
+			if ep, ok := endpoints[0].(map[string]interface{}); ok {
+				endpointAddr, _ = ep["address"].(string)
+				if labels, ok := ep["labels"].(map[string]interface{}); ok {
+					network, _ = labels["topology.istio.io/network"].(string)
+				}
+			}
+		}
+
+		result = append(result, model.ServiceEntryInfo{
+			Name:            item.GetName(),
+			Namespace:       item.GetNamespace(),
+			Hosts:           hosts,
+			Location:        location,
+			EndpointAddress: endpointAddr,
+			Network:         network,
+		})
+	}
+	return result
+}
+
+func (p *KubernetesParser) parseEastWestGateways(ctx context.Context) []model.EastWestGateway {
+	list, err := p.typed.CoreV1().Services("istio-system").List(ctx, metav1.ListOptions{
+		LabelSelector: "topology.istio.io/network",
+	})
+	if err != nil {
+		slog.Warn("failed to list east-west gateway services", "error", err)
+		return nil
+	}
+
+	var result []model.EastWestGateway
+	for _, svc := range list.Items {
+		network := svc.Labels["topology.istio.io/network"]
+
+		ip := ""
+		if len(svc.Status.LoadBalancer.Ingress) > 0 {
+			ip = svc.Status.LoadBalancer.Ingress[0].IP
+		}
+		if ip == "" {
+			ip = svc.Spec.LoadBalancerIP
+		}
+
+		port := 15443
+		for _, p := range svc.Spec.Ports {
+			if p.Port == 15443 {
+				port = int(p.Port)
+				break
+			}
+		}
+
+		result = append(result, model.EastWestGateway{
+			Name:    svc.Name,
+			IP:      ip,
+			Port:    port,
+			Network: network,
+		})
 	}
 	return result
 }
