@@ -37,17 +37,25 @@ spec:
               containerPort: {{ .Values.api.port }}
               protocol: TCP
           livenessProbe:
-            httpGet:
-              path: /api/health
-              port: api
+            exec:
+              command:
+                - wget
+                - -qO-
+                - --timeout=5
+                - http://localhost:{{ .Values.api.port }}/api/health
             initialDelaySeconds: 5
             periodSeconds: 15
+            timeoutSeconds: 10
           readinessProbe:
-            httpGet:
-              path: /api/health
-              port: api
+            exec:
+              command:
+                - wget
+                - -qO-
+                - --timeout=5
+                - http://localhost:{{ .Values.api.port }}/api/health
             initialDelaySeconds: 3
             periodSeconds: 10
+            timeoutSeconds: 10
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- if .Values.tfstate.enabled }}
