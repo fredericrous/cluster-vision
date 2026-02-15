@@ -40,4 +40,4 @@ COPY --from=web-builder /app/node_modules/ /app/node_modules/
 EXPOSE 3000 8080
 
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["sh", "-c", "/api & node /app/build/server/index.js"]
+CMD ["sh", "-c", "/api & npx react-router-serve ./build/server/index.js"]
