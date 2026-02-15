@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/fredericrous/cluster-vision/internal/model"
@@ -30,7 +31,14 @@ func NewKubernetesParser(kubeconfig, clusterName string) (*KubernetesParser, err
 	var err error
 
 	if kubeconfig != "" {
-		cfg, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+		data, readErr := os.ReadFile(kubeconfig)
+		if readErr != nil {
+			return nil, fmt.Errorf("reading kubeconfig %s: %w", kubeconfig, readErr)
+		}
+		if len(data) == 0 {
+			return nil, fmt.Errorf("kubeconfig %s is empty", kubeconfig)
+		}
+		cfg, err = clientcmd.RESTConfigFromKubeConfig(data)
 	} else {
 		cfg, err = rest.InClusterConfig()
 	}
