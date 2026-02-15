@@ -114,6 +114,7 @@ func (s *Server) refresh(ctx context.Context) {
 
 	// Primary cluster — full data
 	clusterData := s.k8sParsers[0].ParseAll(ctx)
+	clusterData.PrimaryCluster = s.cfg.ClusterName
 
 	// Additional clusters — security data only
 	for _, p := range s.k8sParsers[1:] {

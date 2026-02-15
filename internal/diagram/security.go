@@ -25,6 +25,31 @@ func GenerateSecurity(data *model.ClusterData) model.DiagramResult {
 		extAuthNS[sp.Cluster+"/"+sp.Namespace] = true
 	}
 
+	// Build client mTLS map: sectionName → optional from ClientTrafficPolicies
+	ctpBySection := make(map[string]bool) // sectionName → optional
+	for _, ctp := range data.ClientTrafficPolicies {
+		ctpBySection[ctp.SectionName] = ctp.Optional
+	}
+
+	// Cross-reference with HTTPRoutes to get cluster/namespace → client mTLS status
+	// HTTPRoutes are only from the primary cluster
+	clientMTLS := make(map[string]string) // cluster/namespace → "yes"|"optional"
+	for _, route := range data.HTTPRoutes {
+		if route.SectionName == "" {
+			continue
+		}
+		optional, hasCTP := ctpBySection[route.SectionName]
+		if !hasCTP {
+			continue
+		}
+		key := data.PrimaryCluster + "/" + route.Namespace
+		if !optional {
+			clientMTLS[key] = "yes"
+		} else if clientMTLS[key] != "yes" {
+			clientMTLS[key] = "optional"
+		}
+	}
+
 	sorted := make([]model.NamespaceInfo, len(data.Namespaces))
 	copy(sorted, data.Namespaces)
 	sort.Slice(sorted, func(i, j int) bool {
@@ -37,10 +62,10 @@ func GenerateSecurity(data *model.ClusterData) model.DiagramResult {
 	var b strings.Builder
 
 	// Table
-	b.WriteString("| Cluster | Namespace | Istio Ambient | mTLS | Ext Auth | Backup | Pod Security |\n")
-	b.WriteString("|---------|-----------|:---:|:---:|:---:|:---:|:---:|\n")
+	b.WriteString("| Cluster | Namespace | Istio Ambient | mTLS | mTLS Client | Ext Auth | Backup | Pod Security |\n")
+	b.WriteString("|---------|-----------|:---:|:---:|:---:|:---:|:---:|:---:|\n")
 
-	var ambientCount, mtlsCount, authCount, backupCount int
+	var ambientCount, mtlsCount, clientMTLSCount, authCount, backupCount int
 
 	for _, ns := range sorted {
 		nsKey := ns.Cluster + "/" + ns.Name
@@ -53,11 +78,19 @@ func GenerateSecurity(data *model.ClusterData) model.DiagramResult {
 			podSec = "-"
 		}
 
+		cmtls := clientMTLS[nsKey]
+		if cmtls == "" {
+			cmtls = "no"
+		}
+
 		if ns.Ambient {
 			ambientCount++
 		}
 		if ns.MTLS {
 			mtlsCount++
+		}
+		if cmtls == "yes" {
+			clientMTLSCount++
 		}
 		if extAuthNS[nsKey] {
 			authCount++
@@ -66,8 +99,8 @@ func GenerateSecurity(data *model.ClusterData) model.DiagramResult {
 			backupCount++
 		}
 
-		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s |\n",
-			ns.Cluster, ns.Name, ambient, mtls, auth, backup, podSec))
+		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s | %s |\n",
+			ns.Cluster, ns.Name, ambient, mtls, cmtls, auth, backup, podSec))
 	}
 
 	// Coverage pie chart
@@ -76,7 +109,8 @@ func GenerateSecurity(data *model.ClusterData) model.DiagramResult {
 	b.WriteString(fmt.Sprintf("  \"Istio Ambient\" : %d\n", ambientCount))
 	b.WriteString(fmt.Sprintf("  \"Velero Backup\" : %d\n", backupCount))
 	b.WriteString(fmt.Sprintf("  \"Ext Auth\" : %d\n", authCount))
-	b.WriteString(fmt.Sprintf("  \"mTLS Sync\" : %d\n", mtlsCount))
+	b.WriteString(fmt.Sprintf("  \"mTLS Mesh\" : %d\n", mtlsCount))
+	b.WriteString(fmt.Sprintf("  \"mTLS Client\" : %d\n", clientMTLSCount))
 	b.WriteString("```\n")
 
 	return model.DiagramResult{

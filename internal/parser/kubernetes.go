@@ -73,6 +73,7 @@ func (p *KubernetesParser) ParseAll(ctx context.Context) *model.ClusterData {
 	data.HTTPRoutes = p.parseHTTPRoutes(ctx)
 	data.Namespaces = p.parseNamespaces(ctx)
 	data.SecurityPolicies = p.parseSecurityPolicies(ctx)
+	data.ClientTrafficPolicies = p.parseClientTrafficPolicies(ctx)
 	data.ServiceEntries = p.parseServiceEntries(ctx)
 	data.EastWestGateways = p.parseEastWestGateways(ctx)
 	return data
@@ -345,6 +346,46 @@ func (p *KubernetesParser) parseSecurityPolicies(ctx context.Context) []model.Se
 				Cluster:   p.clusterName,
 			})
 		}
+	}
+	return result
+}
+
+func (p *KubernetesParser) parseClientTrafficPolicies(ctx context.Context) []model.ClientTrafficPolicyInfo {
+	gvr := schema.GroupVersionResource{
+		Group:    "gateway.envoyproxy.io",
+		Version:  "v1alpha1",
+		Resource: "clienttrafficpolicies",
+	}
+
+	list, err := p.dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		slog.Debug("no client traffic policies found", "error", err)
+		return nil
+	}
+
+	var result []model.ClientTrafficPolicyInfo
+	for _, item := range list.Items {
+		spec, _ := item.Object["spec"].(map[string]interface{})
+		targetRef, _ := spec["targetRef"].(map[string]interface{})
+		sectionName := strVal(targetRef, "sectionName")
+		if sectionName == "" {
+			continue
+		}
+
+		optional := false
+		if tls, ok := spec["tls"].(map[string]interface{}); ok {
+			if cv, ok := tls["clientValidation"].(map[string]interface{}); ok {
+				if opt, ok := cv["optional"].(bool); ok {
+					optional = opt
+				}
+			}
+		}
+
+		result = append(result, model.ClientTrafficPolicyInfo{
+			Name:        item.GetName(),
+			SectionName: sectionName,
+			Optional:    optional,
+		})
 	}
 	return result
 }

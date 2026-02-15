@@ -2,15 +2,17 @@ package model
 
 // ClusterData holds all parsed cluster state.
 type ClusterData struct {
-	Nodes            []NodeInfo
-	Flux             []FluxKustomization
-	Gateways         []GatewayInfo
-	HTTPRoutes       []HTTPRouteInfo
-	Namespaces       []NamespaceInfo
-	SecurityPolicies []SecurityPolicyInfo
-	InfraSources     []InfraSource
-	ServiceEntries   []ServiceEntryInfo
-	EastWestGateways []EastWestGateway
+	PrimaryCluster        string
+	Nodes                 []NodeInfo
+	Flux                  []FluxKustomization
+	Gateways              []GatewayInfo
+	HTTPRoutes            []HTTPRouteInfo
+	Namespaces            []NamespaceInfo
+	SecurityPolicies      []SecurityPolicyInfo
+	ClientTrafficPolicies []ClientTrafficPolicyInfo
+	InfraSources          []InfraSource
+	ServiceEntries        []ServiceEntryInfo
+	EastWestGateways      []EastWestGateway
 }
 
 // ServiceEntryInfo represents an Istio ServiceEntry resource.
@@ -129,6 +131,13 @@ type SecurityPolicyInfo struct {
 	Name      string
 	Namespace string
 	Cluster   string
+}
+
+// ClientTrafficPolicyInfo tracks client mTLS policies at the ingress.
+type ClientTrafficPolicyInfo struct {
+	Name        string
+	SectionName string
+	Optional    bool
 }
 
 // TerraformNode represents a VM parsed from Terraform state.
