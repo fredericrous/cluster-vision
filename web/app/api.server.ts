@@ -30,3 +30,11 @@ export async function fetchDiagram(
   }
   return { diagram, generatedAt: data.generated_at };
 }
+
+export async function fetchDiagramsByPrefix(
+  prefix: string
+): Promise<{ diagrams: DiagramResult[]; generatedAt: string }> {
+  const data = await fetchDiagrams();
+  const diagrams = data.diagrams.filter((d) => d.id.startsWith(prefix));
+  return { diagrams, generatedAt: data.generated_at };
+}

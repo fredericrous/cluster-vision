@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 type Config struct {
 	Port            int
 	Kubeconfig      string
-	TFStatePath     string
+	DataSources     []model.DataSource
 	RefreshInterval time.Duration
 }
 
@@ -53,7 +54,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 
 	addr := fmt.Sprintf(":%d", s.cfg.Port)
-	slog.Info("starting server", "addr", addr, "refresh", s.cfg.RefreshInterval)
+	slog.Info("starting server", "addr", addr, "refresh", s.cfg.RefreshInterval, "dataSources", len(s.cfg.DataSources))
 
 	srv := &http.Server{Addr: addr, Handler: withCORS(mux)}
 
@@ -87,15 +88,24 @@ func (s *Server) refresh(ctx context.Context) {
 
 	clusterData := s.k8s.ParseAll(ctx)
 
-	// Merge terraform state if available
-	clusterData.TerraformNodes = parser.ParseTerraformState(s.cfg.TFStatePath)
+	// Resolve each data source
+	for _, ds := range s.cfg.DataSources {
+		src, err := resolveDataSource(ds)
+		if err != nil {
+			slog.Warn("failed to resolve data source", "name", ds.Name, "error", err)
+			continue
+		}
+		if src != nil {
+			clusterData.InfraSources = append(clusterData.InfraSources, *src)
+		}
+	}
 
-	diagrams := []model.DiagramResult{
-		diagram.GenerateTopology(clusterData),
+	diagrams := diagram.GenerateTopologySections(clusterData)
+	diagrams = append(diagrams,
 		diagram.GenerateDependencies(clusterData),
 		diagram.GenerateNetwork(clusterData),
 		diagram.GenerateSecurity(clusterData),
-	}
+	)
 
 	s.mu.Lock()
 	s.data = diagrams
@@ -103,6 +113,59 @@ func (s *Server) refresh(ctx context.Context) {
 	s.mu.Unlock()
 
 	slog.Info("refresh complete", "duration", time.Since(start))
+}
+
+// resolveDataSource fetches and parses a single data source.
+func resolveDataSource(ds model.DataSource) (*model.InfraSource, error) {
+	data, err := fetchSourceData(ds)
+	if err != nil {
+		return nil, err
+	}
+	if data == nil {
+		return nil, nil
+	}
+
+	src := &model.InfraSource{
+		Name: ds.Name,
+		Type: ds.Type,
+	}
+
+	switch ds.Type {
+	case "tfstate":
+		nodes := parser.ParseTerraformStateBytes(data)
+		if len(nodes) == 0 {
+			return nil, nil
+		}
+		src.TerraformNodes = nodes
+	case "docker-compose":
+		dc, err := parser.ParseDockerCompose(data)
+		if err != nil {
+			return nil, fmt.Errorf("parsing docker-compose: %w", err)
+		}
+		if dc == nil {
+			return nil, nil
+		}
+		src.DockerCompose = dc
+	default:
+		return nil, fmt.Errorf("unknown data source type: %s", ds.Type)
+	}
+
+	return src, nil
+}
+
+// fetchSourceData gets raw bytes from a data source (file or GitHub).
+func fetchSourceData(ds model.DataSource) ([]byte, error) {
+	if ds.GitHub != nil {
+		return parser.FetchGitHubFile(ds.GitHub)
+	}
+	if ds.Path != "" {
+		data, err := os.ReadFile(ds.Path)
+		if err != nil {
+			return nil, err
+		}
+		return data, nil
+	}
+	return nil, fmt.Errorf("data source %q has no path or github config", ds.Name)
 }
 
 func (s *Server) handleDiagrams(w http.ResponseWriter, r *http.Request) {

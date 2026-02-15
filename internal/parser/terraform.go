@@ -47,6 +47,11 @@ func ParseTerraformState(path string) []model.TerraformNode {
 		return nil
 	}
 
+	return ParseTerraformStateBytes(data)
+}
+
+// ParseTerraformStateBytes parses terraform.tfstate JSON bytes and extracts VM nodes.
+func ParseTerraformStateBytes(data []byte) []model.TerraformNode {
 	var state tfState
 	if err := json.Unmarshal(data, &state); err != nil {
 		slog.Warn("failed to parse terraform state", "error", err)

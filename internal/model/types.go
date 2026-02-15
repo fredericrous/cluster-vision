@@ -8,7 +8,49 @@ type ClusterData struct {
 	HTTPRoutes       []HTTPRouteInfo
 	Namespaces       []NamespaceInfo
 	SecurityPolicies []SecurityPolicyInfo
-	TerraformNodes   []TerraformNode
+	InfraSources     []InfraSource
+}
+
+// DataSource defines where to fetch infrastructure data from.
+type DataSource struct {
+	Name   string        `json:"name"`
+	Type   string        `json:"type"`   // "tfstate" | "docker-compose"
+	Path   string        `json:"path"`   // local file path (optional)
+	GitHub *GitHubSource `json:"github"` // fetch from GitHub (optional)
+}
+
+// GitHubSource defines how to fetch a file from GitHub.
+type GitHubSource struct {
+	Repo      string `json:"repo"`      // "owner/repo"
+	FilePath  string `json:"filePath"`  // path in repo
+	Ref       string `json:"ref"`       // branch/tag, default "main"
+	TokenFile string `json:"tokenFile"` // path to file with PAT
+}
+
+// InfraSource holds parsed infrastructure data from one source.
+type InfraSource struct {
+	Name           string
+	Type           string // "tfstate" | "docker-compose"
+	TerraformNodes []TerraformNode
+	DockerCompose  *DockerCompose
+}
+
+// DockerCompose represents a parsed docker-compose file.
+type DockerCompose struct {
+	Services []DockerService
+}
+
+// DockerService represents a single service in docker-compose.
+type DockerService struct {
+	Name       string
+	Image      string
+	Hostname   string
+	IP         string
+	Ports      []string
+	Volumes    []string
+	Networks   []string
+	Command    string
+	Privileged bool
 }
 
 // NodeInfo represents a Kubernetes node.
@@ -77,15 +119,15 @@ type SecurityPolicyInfo struct {
 
 // TerraformNode represents a VM parsed from Terraform state.
 type TerraformNode struct {
-	Name     string
-	IP       string
-	Cores    int
-	MemoryMB int
-	OSDiskGB int
+	Name       string
+	IP         string
+	Cores      int
+	MemoryMB   int
+	OSDiskGB   int
 	DataDiskGB int
-	GPU      string
-	Role     string
-	Provider string
+	GPU        string
+	Role       string
+	Provider   string
 }
 
 // DiagramResult holds a generated diagram.

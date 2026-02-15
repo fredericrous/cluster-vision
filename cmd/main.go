@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"log/slog"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/fredericrous/cluster-vision/internal/model"
 	"github.com/fredericrous/cluster-vision/internal/server"
 )
 
@@ -16,7 +18,6 @@ func main() {
 	var cfg server.Config
 	flag.IntVar(&cfg.Port, "port", 8080, "HTTP server port")
 	flag.StringVar(&cfg.Kubeconfig, "kubeconfig", "", "path to kubeconfig (empty for in-cluster)")
-	flag.StringVar(&cfg.TFStatePath, "tfstate", "", "path to terraform.tfstate file")
 	flag.DurationVar(&cfg.RefreshInterval, "refresh", 5*time.Minute, "data refresh interval")
 	flag.Parse()
 
@@ -24,14 +25,30 @@ func main() {
 	if v := os.Getenv("KUBECONFIG"); v != "" && cfg.Kubeconfig == "" {
 		cfg.Kubeconfig = v
 	}
-	if v := os.Getenv("TFSTATE_PATH"); v != "" && cfg.TFStatePath == "" {
-		cfg.TFStatePath = v
+
+	// Data sources from env
+	if v := os.Getenv("DATA_SOURCES"); v != "" {
+		var sources []model.DataSource
+		if err := json.Unmarshal([]byte(v), &sources); err != nil {
+			slog.Error("failed to parse DATA_SOURCES", "error", err)
+			os.Exit(1)
+		}
+		cfg.DataSources = sources
+	}
+
+	// Backward compat: TFSTATE_PATH creates a single tfstate source
+	if v := os.Getenv("TFSTATE_PATH"); v != "" && len(cfg.DataSources) == 0 {
+		cfg.DataSources = []model.DataSource{{
+			Name: "Terraform",
+			Type: "tfstate",
+			Path: v,
+		}}
 	}
 
 	slog.Info("cluster-vision starting",
 		"port", cfg.Port,
 		"kubeconfig", cfg.Kubeconfig,
-		"tfstate", cfg.TFStatePath,
+		"dataSources", len(cfg.DataSources),
 		"refresh", cfg.RefreshInterval,
 	)
 

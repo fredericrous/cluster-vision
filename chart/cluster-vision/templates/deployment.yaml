@@ -25,9 +25,9 @@ spec:
               value: "{{ .Values.api.port }}"
             - name: REFRESH_INTERVAL
               value: "{{ .Values.refresh }}"
-            {{- if .Values.tfstate.enabled }}
-            - name: TFSTATE_PATH
-              value: "{{ .Values.tfstate.path }}"
+            {{- if .Values.dataSources }}
+            - name: DATA_SOURCES
+              value: {{ .Values.dataSources | toJson | quote }}
             {{- end }}
           ports:
             - name: web
@@ -58,19 +58,19 @@ spec:
             timeoutSeconds: 10
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if .Values.tfstate.enabled }}
+          {{- if .Values.githubToken.secretName }}
           volumeMounts:
-            - name: tfstate
-              mountPath: /data
+            - name: github-token
+              mountPath: {{ .Values.githubToken.mountPath }}
+              subPath: token
               readOnly: true
           {{- end }}
-      {{- if .Values.tfstate.enabled }}
+      {{- if .Values.githubToken.secretName }}
       volumes:
-        - name: tfstate
-          {{- if .Values.tfstate.existingClaim }}
-          persistentVolumeClaim:
-            claimName: {{ .Values.tfstate.existingClaim }}
-          {{- else }}
-          emptyDir: {}
-          {{- end }}
+        - name: github-token
+          secret:
+            secretName: {{ .Values.githubToken.secretName }}
+            items:
+              - key: {{ .Values.githubToken.secretKey }}
+                path: token
       {{- end }}

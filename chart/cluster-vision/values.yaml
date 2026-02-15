@@ -22,11 +22,29 @@ serviceAccount:
 rbac:
   create: true
 
-tfstate:
-  enabled: false
-  path: /data/terraform.tfstate
-  # Mount from a PVC, ConfigMap, or external volume
-  existingClaim: ""
+dataSources: []
+# Example with GitHub source:
+# dataSources:
+#   - name: Homelab
+#     type: tfstate
+#     github:
+#       repo: fredericrous/homelab
+#       filePath: infrastructure/homelab/terraform.tfstate
+#       ref: main
+#       tokenFile: /secrets/github-token
+#   - name: NAS
+#     type: docker-compose
+#     github:
+#       repo: fredericrous/homelab
+#       filePath: infrastructure/nas/docker-compose.yaml
+#       ref: main
+#       tokenFile: /secrets/github-token
+
+# Token secret to mount (optional, for GitHub sources)
+githubToken:
+  secretName: ""    # e.g. "cluster-vars"
+  secretKey: ""     # e.g. "GHCR_TOKEN"
+  mountPath: /secrets/github-token
 
 refresh: 5m
 

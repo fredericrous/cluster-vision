@@ -1,5 +1,5 @@
 import type { Route } from "./+types/topology";
-import { fetchDiagram } from "../api.server";
+import { fetchDiagramsByPrefix } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
 
 export function meta({}: Route.MetaArgs) {
@@ -7,14 +7,25 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export async function loader() {
-  return fetchDiagram("topology");
+  return fetchDiagramsByPrefix("topology");
 }
 
 export default function Topology({ loaderData }: Route.ComponentProps) {
+  const { diagrams, generatedAt } = loaderData;
+
+  if (diagrams.length === 0) {
+    return <p>No topology data available.</p>;
+  }
+
   return (
-    <DiagramPage
-      diagram={loaderData.diagram}
-      generatedAt={loaderData.generatedAt}
-    />
+    <>
+      {diagrams.map((diagram) => (
+        <DiagramPage
+          key={diagram.id}
+          diagram={diagram}
+          generatedAt={generatedAt}
+        />
+      ))}
+    </>
   );
 }
