@@ -160,9 +160,6 @@ func (s *Server) refresh(ctx context.Context) {
 		}
 	}
 
-	// Check for latest versions in background
-	s.checker.Check(clusterData.HelmRepositories, clusterData.HelmReleases)
-
 	diagrams := diagram.GenerateTopologySections(clusterData)
 	diagrams = append(diagrams,
 		diagram.GenerateDependencies(clusterData),
@@ -177,6 +174,22 @@ func (s *Server) refresh(ctx context.Context) {
 	s.mu.Unlock()
 
 	slog.Info("refresh complete", "duration", time.Since(start))
+
+	// Check latest versions asynchronously — updates arrive on next page load
+	go func() {
+		s.checker.Check(clusterData.HelmRepositories, clusterData.HelmReleases)
+
+		// Regenerate versions diagram with updated latest versions
+		versionsResult := diagram.GenerateVersions(clusterData, s.checker)
+		s.mu.Lock()
+		for i, d := range s.data {
+			if d.ID == "versions" {
+				s.data[i] = versionsResult
+				break
+			}
+		}
+		s.mu.Unlock()
+	}()
 }
 
 // resolveDataSource fetches and parses a single data source.

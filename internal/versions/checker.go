@@ -89,7 +89,7 @@ func (c *Checker) Check(repos []model.HelmRepositoryInfo, releases []model.HelmR
 		}
 
 		if err != nil {
-			slog.Debug("version check failed", "repo", ch.repoURL, "chart", ch.chartName, "error", err)
+			slog.Warn("version check failed", "repo", ch.repoURL, "chart", ch.chartName, "error", err)
 			continue
 		}
 
