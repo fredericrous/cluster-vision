@@ -16,7 +16,7 @@ interface FlowNodeRaw {
   id: string;
   label: string;
   cluster: string;
-  layer: string;
+  layer: string; // unused — depth is computed from edges
 }
 
 interface FlowEdgeRaw {
@@ -30,43 +30,61 @@ interface FlowDataRaw {
   edges: FlowEdgeRaw[];
 }
 
-const LAYER_ORDER = ["Foundation", "Platform", "Middleware", "Apps", "Uncategorized"];
-
 const NODE_W = 150;
 const NODE_H = 40;
 const GAP_X = 30;
 const GAP_Y = 16;
 const PAD_X = 20;
-const PAD_TOP = 32; // space for layer label
+const PAD_TOP = 32;
 const PAD_BOTTOM = 16;
 const LAYER_GAP = 40;
 const MAX_COLS = 8;
 
 const nodeTypes = { flow: FlowNode, layerGroup: LayerGroup };
 
-const layerMiniMapColors: Record<string, string> = {
-  Foundation: "rgba(59, 130, 246, 0.5)",
-  Platform: "rgba(139, 92, 246, 0.5)",
-  Middleware: "rgba(245, 158, 11, 0.5)",
-  Apps: "rgba(34, 197, 94, 0.5)",
-  Uncategorized: "rgba(100, 116, 139, 0.5)",
-};
-
 const clusterColors: Record<string, string> = {
   Homelab: "#6366f1",
   NAS: "#14b8a6",
 };
 
-// Barycenter heuristic: order nodes within each layer so edges go
+// Compute topological depth: 0 = no deps, N = longest chain of deps.
+function computeDepths(
+  nodes: FlowNodeRaw[],
+  edges: FlowEdgeRaw[]
+): Map<string, number> {
+  const deps = new Map<string, Set<string>>();
+  for (const n of nodes) deps.set(n.id, new Set());
+  for (const e of edges) deps.get(e.target)?.add(e.source);
+
+  const depth = new Map<string, number>();
+
+  function resolve(id: string): number {
+    if (depth.has(id)) return depth.get(id)!;
+    const d = deps.get(id);
+    if (!d || d.size === 0) {
+      depth.set(id, 0);
+      return 0;
+    }
+    // Temporarily mark to detect cycles
+    depth.set(id, 0);
+    let max = 0;
+    for (const dep of d) max = Math.max(max, resolve(dep) + 1);
+    depth.set(id, max);
+    return max;
+  }
+
+  for (const n of nodes) resolve(n.id);
+  return depth;
+}
+
+// Barycenter heuristic: order nodes within each rank so edges go
 // as straight down as possible, minimizing crossings.
-// Two passes (down then up) for good convergence.
 function minimizeCrossings(
-  byLayer: Map<string, FlowNodeRaw[]>,
+  byRank: Map<number, FlowNodeRaw[]>,
   edges: FlowEdgeRaw[]
 ): void {
-  // Build upward/downward neighbor maps
-  const upNeighbors = new Map<string, string[]>(); // target → sources
-  const downNeighbors = new Map<string, string[]>(); // source → targets
+  const upNeighbors = new Map<string, string[]>();
+  const downNeighbors = new Map<string, string[]>();
   for (const e of edges) {
     if (!upNeighbors.has(e.target)) upNeighbors.set(e.target, []);
     upNeighbors.get(e.target)!.push(e.source);
@@ -75,13 +93,11 @@ function minimizeCrossings(
   }
 
   const nodeIndex = new Map<string, number>();
-  const activeLayers = LAYER_ORDER.filter(
-    (l) => (byLayer.get(l)?.length ?? 0) > 0
-  );
+  const ranks = [...byRank.keys()].sort((a, b) => a - b);
 
-  // Initialize with alphabetical order
-  for (const layer of activeLayers) {
-    const nodes = byLayer.get(layer)!;
+  // Initialize alphabetical
+  for (const rank of ranks) {
+    const nodes = byRank.get(rank)!;
     nodes.sort((a, b) => a.label.localeCompare(b.label));
     for (let i = 0; i < nodes.length; i++) nodeIndex.set(nodes[i].id, i);
   }
@@ -94,17 +110,12 @@ function minimizeCrossings(
     for (const n of nodes) {
       const nbrs = getNeighbors(n.id);
       if (nbrs.length === 0) continue;
-      let sum = 0,
-        count = 0;
+      let sum = 0, count = 0;
       for (const nbr of nbrs) {
-        if (nodeIndex.has(nbr)) {
-          sum += nodeIndex.get(nbr)!;
-          count++;
-        }
+        if (nodeIndex.has(nbr)) { sum += nodeIndex.get(nbr)!; count++; }
       }
       if (count > 0) bary.set(n.id, sum / count);
     }
-
     nodes.sort((a, b) => {
       const ba = bary.get(a.id);
       const bb = bary.get(b.id);
@@ -113,19 +124,15 @@ function minimizeCrossings(
       if (bb !== undefined) return 1;
       return a.label.localeCompare(b.label);
     });
-
     for (let i = 0; i < nodes.length; i++) nodeIndex.set(nodes[i].id, i);
   }
 
-  // Pass 1: top-down (sort by upstream dependency positions)
-  for (const layer of activeLayers) {
-    sortByBarycenter(byLayer.get(layer)!, (id) => upNeighbors.get(id) || []);
+  // Down pass then up pass
+  for (const rank of ranks) {
+    sortByBarycenter(byRank.get(rank)!, (id) => upNeighbors.get(id) || []);
   }
-  // Pass 2: bottom-up (sort by downstream dependent positions)
-  for (let i = activeLayers.length - 1; i >= 0; i--) {
-    sortByBarycenter(byLayer.get(activeLayers[i])!, (id) =>
-      downNeighbors.get(id) || []
-    );
+  for (let i = ranks.length - 1; i >= 0; i--) {
+    sortByBarycenter(byRank.get(ranks[i])!, (id) => downNeighbors.get(id) || []);
   }
 }
 
@@ -136,54 +143,55 @@ function buildLayout(
   const clusters = [...new Set(rawNodes.map((n) => n.cluster))];
   const showClusterBadge = clusters.length > 1;
 
-  // Group nodes by layer
-  const byLayer = new Map<string, FlowNodeRaw[]>();
-  for (const layer of LAYER_ORDER) byLayer.set(layer, []);
+  // Compute real deployment depth from dependency graph
+  const depths = computeDepths(rawNodes, rawEdges);
+
+  // Group by depth
+  const byRank = new Map<number, FlowNodeRaw[]>();
   for (const n of rawNodes) {
-    const bucket = byLayer.get(n.layer) || byLayer.get("Uncategorized")!;
-    bucket.push(n);
+    const d = depths.get(n.id) ?? 0;
+    if (!byRank.has(d)) byRank.set(d, []);
+    byRank.get(d)!.push(n);
   }
 
-  // Order nodes within layers to minimize edge crossings
-  minimizeCrossings(byLayer, rawEdges);
+  // Order within ranks to minimize crossings
+  minimizeCrossings(byRank, rawEdges);
 
-  // Find widest layer to align all groups to the same width
+  const ranks = [...byRank.keys()].sort((a, b) => a - b);
+
+  // Uniform width across all ranks
   let maxCols = 0;
-  for (const layer of LAYER_ORDER) {
-    const count = byLayer.get(layer)!.length;
-    if (count > 0) maxCols = Math.max(maxCols, Math.min(count, MAX_COLS));
+  for (const rank of ranks) {
+    maxCols = Math.max(maxCols, Math.min(byRank.get(rank)!.length, MAX_COLS));
   }
   const uniformW = maxCols * (NODE_W + GAP_X) - GAP_X + 2 * PAD_X;
 
   const allNodes: Node[] = [];
   let currentY = 0;
 
-  for (const layer of LAYER_ORDER) {
-    const layerNodes = byLayer.get(layer)!;
-    if (layerNodes.length === 0) continue;
-
-    const cols = Math.min(layerNodes.length, MAX_COLS);
-    const rows = Math.ceil(layerNodes.length / cols);
+  for (const rank of ranks) {
+    const rankNodes = byRank.get(rank)!;
+    const cols = Math.min(rankNodes.length, MAX_COLS);
+    const rows = Math.ceil(rankNodes.length / cols);
     const groupW = Math.max(uniformW, cols * (NODE_W + GAP_X) - GAP_X + 2 * PAD_X);
     const groupH = PAD_TOP + rows * (NODE_H + GAP_Y) - GAP_Y + PAD_BOTTOM;
 
-    // Center nodes within the uniform-width group
     const contentW = cols * (NODE_W + GAP_X) - GAP_X;
     const offsetX = PAD_X + (groupW - 2 * PAD_X - contentW) / 2;
 
-    const groupId = `group-${layer}`;
+    const groupId = `rank-${rank}`;
     allNodes.push({
       id: groupId,
       type: "layerGroup",
       position: { x: 0, y: currentY },
       style: { width: groupW, height: groupH },
-      data: { label: layer },
+      data: { label: `Rank ${rank}` },
       draggable: true,
       selectable: false,
     });
 
-    for (let i = 0; i < layerNodes.length; i++) {
-      const n = layerNodes[i];
+    for (let i = 0; i < rankNodes.length; i++) {
+      const n = rankNodes[i];
       const col = i % cols;
       const row = Math.floor(i / cols);
       allNodes.push({
@@ -241,10 +249,7 @@ export function FlowDiagram({ content }: { content: string }) {
         <Controls showInteractive={false} />
         <MiniMap
           nodeColor={(n) => {
-            if (n.type === "layerGroup") {
-              const layer = (n.data as Record<string, unknown>).label as string;
-              return layerMiniMapColors[layer] || layerMiniMapColors.Uncategorized;
-            }
+            if (n.type === "layerGroup") return "rgba(100, 116, 139, 0.3)";
             return "rgba(30, 41, 59, 0.9)";
           }}
           maskColor="rgba(0, 0, 0, 0.7)"
