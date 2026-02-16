@@ -7,9 +7,9 @@ import {
   type Node,
   type Edge,
 } from "@xyflow/react";
-import dagre from "@dagrejs/dagre";
 import "@xyflow/react/dist/style.css";
 import { FlowNode, type FlowNodeData } from "./flow-node";
+import { LayerGroup } from "./flow-group";
 import styles from "./flow-diagram.module.css";
 
 interface FlowNodeRaw {
@@ -30,12 +30,21 @@ interface FlowDataRaw {
   edges: FlowEdgeRaw[];
 }
 
-const NODE_WIDTH = 150;
-const NODE_HEIGHT = 40;
+const LAYER_ORDER = ["Foundation", "Platform", "Middleware", "Apps", "Uncategorized"];
 
-const nodeTypes = { flow: FlowNode };
+const NODE_W = 150;
+const NODE_H = 40;
+const GAP_X = 30;
+const GAP_Y = 16;
+const PAD_X = 20;
+const PAD_TOP = 32; // space for layer label
+const PAD_BOTTOM = 16;
+const LAYER_GAP = 40;
+const MAX_COLS = 8;
 
-const layerColors: Record<string, string> = {
+const nodeTypes = { flow: FlowNode, layerGroup: LayerGroup };
+
+const layerMiniMapColors: Record<string, string> = {
   Foundation: "rgba(59, 130, 246, 0.5)",
   Platform: "rgba(139, 92, 246, 0.5)",
   Middleware: "rgba(245, 158, 11, 0.5)",
@@ -48,57 +57,86 @@ const clusterColors: Record<string, string> = {
   NAS: "#14b8a6",
 };
 
-function layoutNodes(
+function buildLayout(
   rawNodes: FlowNodeRaw[],
   rawEdges: FlowEdgeRaw[]
-): { nodes: Node[]; edges: Edge[] } {
-  const g = new dagre.graphlib.Graph();
-  g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: "TB", nodesep: 60, ranksep: 80 });
+): { nodes: Node[]; edges: Edge[]; clusters: string[] } {
+  const clusters = [...new Set(rawNodes.map((n) => n.cluster))];
+  const showClusterBadge = clusters.length > 1;
 
-  const clusters = new Set(rawNodes.map((n) => n.cluster));
-  const showClusterBadge = clusters.size > 1;
-
+  // Group nodes by layer
+  const byLayer = new Map<string, FlowNodeRaw[]>();
+  for (const layer of LAYER_ORDER) byLayer.set(layer, []);
   for (const n of rawNodes) {
-    g.setNode(n.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+    const bucket = byLayer.get(n.layer) || byLayer.get("Uncategorized")!;
+    bucket.push(n);
   }
-  for (const e of rawEdges) {
-    g.setEdge(e.source, e.target);
+  // Sort within each layer alphabetically
+  for (const nodes of byLayer.values()) {
+    nodes.sort((a, b) => a.label.localeCompare(b.label));
   }
 
-  dagre.layout(g);
+  const allNodes: Node[] = [];
+  let currentY = 0;
 
-  const nodes: Node[] = rawNodes.map((n) => {
-    const pos = g.node(n.id);
-    return {
-      id: n.id,
-      type: "flow",
-      position: { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 },
-      data: {
-        label: n.label,
-        cluster: n.cluster,
-        layer: n.layer,
-        showClusterBadge,
-      } satisfies FlowNodeData,
-    };
-  });
+  for (const layer of LAYER_ORDER) {
+    const layerNodes = byLayer.get(layer)!;
+    if (layerNodes.length === 0) continue;
+
+    const cols = Math.min(layerNodes.length, MAX_COLS);
+    const rows = Math.ceil(layerNodes.length / cols);
+    const groupW = cols * (NODE_W + GAP_X) - GAP_X + 2 * PAD_X;
+    const groupH = PAD_TOP + rows * (NODE_H + GAP_Y) - GAP_Y + PAD_BOTTOM;
+
+    const groupId = `group-${layer}`;
+    allNodes.push({
+      id: groupId,
+      type: "layerGroup",
+      position: { x: 0, y: currentY },
+      style: { width: groupW, height: groupH },
+      data: { label: layer },
+      draggable: true,
+      selectable: false,
+    });
+
+    for (let i = 0; i < layerNodes.length; i++) {
+      const n = layerNodes[i];
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      allNodes.push({
+        id: n.id,
+        type: "flow",
+        position: {
+          x: PAD_X + col * (NODE_W + GAP_X),
+          y: PAD_TOP + row * (NODE_H + GAP_Y),
+        },
+        parentId: groupId,
+        extent: "parent" as const,
+        data: {
+          label: n.label,
+          cluster: n.cluster,
+          showClusterBadge,
+        } satisfies FlowNodeData,
+      });
+    }
+
+    currentY += groupH + LAYER_GAP;
+  }
 
   const edges: Edge[] = rawEdges.map((e) => ({
     id: e.id,
     source: e.source,
     target: e.target,
-    animated: false,
+    type: "smoothstep",
   }));
 
-  return { nodes, edges };
+  return { nodes: allNodes, edges, clusters };
 }
 
 export function FlowDiagram({ content }: { content: string }) {
   const { nodes, edges, clusters } = useMemo(() => {
     const raw: FlowDataRaw = JSON.parse(content);
-    const { nodes, edges } = layoutNodes(raw.nodes, raw.edges);
-    const clusters = [...new Set(raw.nodes.map((n) => n.cluster))];
-    return { nodes, edges, clusters };
+    return buildLayout(raw.nodes, raw.edges);
   }, [content]);
 
   const showClusterLegend = clusters.length > 1;
@@ -113,49 +151,37 @@ export function FlowDiagram({ content }: { content: string }) {
         fitView
         nodesConnectable={false}
         deleteKeyCode={null}
-        minZoom={0.2}
+        minZoom={0.1}
         maxZoom={2}
       >
         <Background gap={20} size={1} />
         <Controls showInteractive={false} />
         <MiniMap
           nodeColor={(n) => {
-            const d = n.data as unknown as FlowNodeData;
-            return layerColors[d.layer] || layerColors.Uncategorized;
+            if (n.type === "layerGroup") {
+              const layer = (n.data as Record<string, unknown>).label as string;
+              return layerMiniMapColors[layer] || layerMiniMapColors.Uncategorized;
+            }
+            return "rgba(30, 41, 59, 0.9)";
           }}
           maskColor="rgba(0, 0, 0, 0.7)"
           pannable
           zoomable
         />
       </ReactFlow>
-      <div className={styles.legend}>
-        {Object.entries(layerColors).map(([layer, color]) => (
-          <span key={layer} className={styles.legendItem}>
-            <span
-              className={styles.legendSwatch}
-              style={{ background: color }}
-            />
-            {layer}
-          </span>
-        ))}
-        {showClusterLegend && (
-          <>
-            <span className={styles.legendDivider} />
-            {clusters.map((cluster) => (
-              <span key={cluster} className={styles.legendItem}>
-                <span
-                  className={styles.legendSwatch}
-                  style={{
-                    background: clusterColors[cluster] || "#64748b",
-                    borderRadius: "1px",
-                  }}
-                />
-                {cluster}
-              </span>
-            ))}
-          </>
-        )}
-      </div>
+      {showClusterLegend && (
+        <div className={styles.legend}>
+          {clusters.map((cluster) => (
+            <span key={cluster} className={styles.legendItem}>
+              <span
+                className={styles.legendSwatch}
+                style={{ background: clusterColors[cluster] || "#64748b" }}
+              />
+              {cluster}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

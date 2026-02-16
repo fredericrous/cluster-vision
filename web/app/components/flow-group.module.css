@@ -1,0 +1,63 @@
+.group {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
+}
+
+.label {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Layer styles */
+.foundation {
+  background: rgba(59, 130, 246, 0.05);
+  border-left: 3px solid rgba(59, 130, 246, 0.6);
+}
+
+.foundation .label {
+  color: rgba(59, 130, 246, 0.8);
+}
+
+.platform {
+  background: rgba(139, 92, 246, 0.05);
+  border-left: 3px solid rgba(139, 92, 246, 0.6);
+}
+
+.platform .label {
+  color: rgba(139, 92, 246, 0.8);
+}
+
+.middleware {
+  background: rgba(245, 158, 11, 0.05);
+  border-left: 3px solid rgba(245, 158, 11, 0.6);
+}
+
+.middleware .label {
+  color: rgba(245, 158, 11, 0.8);
+}
+
+.apps {
+  background: rgba(34, 197, 94, 0.05);
+  border-left: 3px solid rgba(34, 197, 94, 0.6);
+}
+
+.apps .label {
+  color: rgba(34, 197, 94, 0.8);
+}
+
+.uncategorized {
+  background: rgba(100, 116, 139, 0.05);
+  border-left: 3px solid rgba(100, 116, 139, 0.6);
+}
+
+.uncategorized .label {
+  color: rgba(100, 116, 139, 0.8);
+}
