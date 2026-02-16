@@ -12,5 +12,6 @@ export default [
     route("dependencies", "routes/dependencies.tsx"),
     route("network", "routes/network.tsx"),
     route("security", "routes/security.tsx"),
+    route("versions", "routes/versions.tsx"),
   ]),
 ] satisfies RouteConfig;

@@ -13,6 +13,27 @@ type ClusterData struct {
 	InfraSources          []InfraSource
 	ServiceEntries        []ServiceEntryInfo
 	EastWestGateways      []EastWestGateway
+	HelmReleases          []HelmReleaseInfo
+	HelmRepositories      []HelmRepositoryInfo
+}
+
+// HelmReleaseInfo represents a Flux HelmRelease resource.
+type HelmReleaseInfo struct {
+	Name       string
+	Namespace  string
+	ChartName  string
+	Version    string // deployed chart version
+	RepoName   string // sourceRef name
+	RepoNS     string // sourceRef namespace
+	AppVersion string // from status, if available
+}
+
+// HelmRepositoryInfo represents a Flux HelmRepository source.
+type HelmRepositoryInfo struct {
+	Name      string
+	Namespace string
+	Type      string // "oci" or "default" (HTTP)
+	URL       string
 }
 
 // ServiceEntryInfo represents an Istio ServiceEntry resource.

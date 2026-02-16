@@ -14,6 +14,7 @@ import (
 	"github.com/fredericrous/cluster-vision/internal/diagram"
 	"github.com/fredericrous/cluster-vision/internal/model"
 	"github.com/fredericrous/cluster-vision/internal/parser"
+	"github.com/fredericrous/cluster-vision/internal/versions"
 )
 
 // Config holds server configuration.
@@ -29,6 +30,7 @@ type Config struct {
 type Server struct {
 	cfg        Config
 	k8sParsers []*parser.KubernetesParser
+	checker    *versions.Checker
 	mu         sync.RWMutex
 	data       []model.DiagramResult
 	lastGen    time.Time
@@ -64,7 +66,9 @@ func New(cfg Config) (*Server, error) {
 		slog.Info("added kubernetes data source", "name", ds.Name)
 	}
 
-	return &Server{cfg: cfg, k8sParsers: parsers}, nil
+	checker := versions.NewChecker(cfg.RefreshInterval)
+
+	return &Server{cfg: cfg, k8sParsers: parsers, checker: checker}, nil
 }
 
 // Start begins serving HTTP and starts the background refresh loop.
@@ -72,8 +76,9 @@ func (s *Server) Start(ctx context.Context) error {
 	// Initial generation
 	s.refresh(ctx)
 
-	// Background refresh
+	// Background refresh and version checking
 	go s.refreshLoop(ctx)
+	s.checker.Start(ctx)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/diagrams", s.handleDiagrams)
@@ -155,11 +160,15 @@ func (s *Server) refresh(ctx context.Context) {
 		}
 	}
 
+	// Check for latest versions in background
+	s.checker.Check(clusterData.HelmRepositories, clusterData.HelmReleases)
+
 	diagrams := diagram.GenerateTopologySections(clusterData)
 	diagrams = append(diagrams,
 		diagram.GenerateDependencies(clusterData),
 		diagram.GenerateNetwork(clusterData),
 		diagram.GenerateSecurity(clusterData),
+		diagram.GenerateVersions(clusterData, s.checker),
 	)
 
 	s.mu.Lock()

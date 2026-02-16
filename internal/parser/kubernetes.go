@@ -76,6 +76,8 @@ func (p *KubernetesParser) ParseAll(ctx context.Context) *model.ClusterData {
 	data.ClientTrafficPolicies = p.parseClientTrafficPolicies(ctx)
 	data.ServiceEntries = p.parseServiceEntries(ctx)
 	data.EastWestGateways = p.parseEastWestGateways(ctx)
+	data.HelmReleases = p.parseHelmReleases(ctx)
+	data.HelmRepositories = p.parseHelmRepositories(ctx)
 	return data
 }
 
@@ -474,6 +476,93 @@ func (p *KubernetesParser) parseEastWestGateways(ctx context.Context) []model.Ea
 			IP:      ip,
 			Port:    port,
 			Network: network,
+		})
+	}
+	return result
+}
+
+func (p *KubernetesParser) parseHelmReleases(ctx context.Context) []model.HelmReleaseInfo {
+	gvr := schema.GroupVersionResource{
+		Group:    "helm.toolkit.fluxcd.io",
+		Version:  "v2",
+		Resource: "helmreleases",
+	}
+
+	list, err := p.dynamic.Resource(gvr).Namespace("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		slog.Warn("failed to list helmreleases (CRD may not exist)", "error", err)
+		return nil
+	}
+
+	var result []model.HelmReleaseInfo
+	for _, item := range list.Items {
+		spec, _ := item.Object["spec"].(map[string]interface{})
+		chart, _ := spec["chart"].(map[string]interface{})
+		chartSpec, _ := chart["spec"].(map[string]interface{})
+
+		chartName := strVal(chartSpec, "chart")
+		version := strVal(chartSpec, "version")
+
+		repoName := ""
+		repoNS := ""
+		if sourceRef, ok := chartSpec["sourceRef"].(map[string]interface{}); ok {
+			repoName = strVal(sourceRef, "name")
+			repoNS = strVal(sourceRef, "namespace")
+		}
+		if repoNS == "" {
+			repoNS = item.GetNamespace()
+		}
+
+		// Try to get appVersion from status
+		appVersion := ""
+		if status, ok := item.Object["status"].(map[string]interface{}); ok {
+			if history, ok := status["history"].([]interface{}); ok && len(history) > 0 {
+				if latest, ok := history[0].(map[string]interface{}); ok {
+					appVersion = strVal(latest, "appVersion")
+				}
+			}
+		}
+
+		result = append(result, model.HelmReleaseInfo{
+			Name:       item.GetName(),
+			Namespace:  item.GetNamespace(),
+			ChartName:  chartName,
+			Version:    version,
+			RepoName:   repoName,
+			RepoNS:     repoNS,
+			AppVersion: appVersion,
+		})
+	}
+	return result
+}
+
+func (p *KubernetesParser) parseHelmRepositories(ctx context.Context) []model.HelmRepositoryInfo {
+	gvr := schema.GroupVersionResource{
+		Group:    "source.toolkit.fluxcd.io",
+		Version:  "v1",
+		Resource: "helmrepositories",
+	}
+
+	list, err := p.dynamic.Resource(gvr).Namespace("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		slog.Warn("failed to list helmrepositories (CRD may not exist)", "error", err)
+		return nil
+	}
+
+	var result []model.HelmRepositoryInfo
+	for _, item := range list.Items {
+		spec, _ := item.Object["spec"].(map[string]interface{})
+
+		repoType := strVal(spec, "type")
+		if repoType == "" {
+			repoType = "default"
+		}
+
+		result = append(result, model.HelmRepositoryInfo{
+			Name:      item.GetName(),
+			Namespace: item.GetNamespace(),
+			Type:      repoType,
+			URL:       strVal(spec, "url"),
 		})
 	}
 	return result
