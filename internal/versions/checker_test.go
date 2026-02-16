@@ -1,6 +1,9 @@
 package versions
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestHighestSemver(t *testing.T) {
 	tests := []struct {
@@ -61,6 +64,85 @@ func TestParseSemver(t *testing.T) {
 					tt.input, sv.major, sv.minor, sv.patch, sv.pre, tt.major, tt.minor, tt.patch, tt.pre)
 			}
 		})
+	}
+}
+
+func TestResolveUpstream(t *testing.T) {
+	tests := []struct {
+		name      string
+		proxy     string
+		repoURL   string
+		wantHost  string
+		wantPath  string
+	}{
+		{
+			"ghcr through proxy",
+			"192.168.1.43:5000",
+			"oci://192.168.1.43:5000/ghcr.io/grafana/helm-charts",
+			"ghcr.io",
+			"grafana/helm-charts",
+		},
+		{
+			"docker.io through proxy",
+			"192.168.1.43:5000",
+			"oci://192.168.1.43:5000/docker.io/giteacharts",
+			"registry-1.docker.io",
+			"giteacharts",
+		},
+		{
+			"gcr through proxy",
+			"192.168.1.43:5000",
+			"oci://192.168.1.43:5000/gcr.io/istio-release/charts",
+			"gcr.io",
+			"istio-release/charts",
+		},
+		{
+			"direct oci (no proxy)",
+			"",
+			"oci://ghcr.io/fredericrous/charts",
+			"ghcr.io",
+			"fredericrous/charts",
+		},
+		{
+			"different host not resolved",
+			"192.168.1.43:5000",
+			"oci://other-registry:5000/myrepo",
+			"other-registry:5000",
+			"myrepo",
+		},
+		{
+			"registry.k8s.io through proxy",
+			"192.168.1.43:5000",
+			"oci://192.168.1.43:5000/registry.k8s.io/nfd/charts",
+			"registry.k8s.io",
+			"nfd/charts",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewChecker(time.Minute, tt.proxy)
+			host, path := c.resolveUpstream(tt.repoURL)
+			if host != tt.wantHost || path != tt.wantPath {
+				t.Errorf("resolveUpstream(%q) = (%q, %q), want (%q, %q)",
+					tt.repoURL, host, path, tt.wantHost, tt.wantPath)
+			}
+		})
+	}
+}
+
+func TestParseAuthParams(t *testing.T) {
+	input := `realm="https://ghcr.io/token",service="ghcr.io",scope="repository:grafana/helm-charts/grafana:pull"`
+	params := parseAuthParams(input)
+
+	if params["realm"] != "https://ghcr.io/token" {
+		t.Errorf("realm = %q", params["realm"])
+	}
+	if params["service"] != "ghcr.io" {
+		t.Errorf("service = %q", params["service"])
+	}
+	if params["scope"] != "repository:grafana/helm-charts/grafana:pull" {
+		t.Errorf("scope = %q", params["scope"])
 	}
 }
 

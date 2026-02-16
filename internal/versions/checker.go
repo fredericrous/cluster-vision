@@ -1,7 +1,6 @@
 package versions
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,39 +19,24 @@ import (
 
 // Checker periodically fetches latest chart versions from Helm repositories.
 type Checker struct {
-	mu       sync.RWMutex
-	latest   map[string]string // "repoURL/chartName" → latest version
-	interval time.Duration
-	client   *http.Client
+	mu            sync.RWMutex
+	latest        map[string]string // "repoURL/chartName" → latest version
+	interval      time.Duration
+	registryProxy string // e.g. "192.168.1.43:5000" — if set, OCI URLs through this host are resolved to upstream
+	client        *http.Client
 }
 
 // NewChecker creates a version checker with the given check interval.
-func NewChecker(interval time.Duration) *Checker {
+// registryProxy is the host:port of a local OCI proxy (e.g. Zot); empty disables proxy resolution.
+func NewChecker(interval time.Duration, registryProxy string) *Checker {
 	return &Checker{
-		latest:   make(map[string]string),
-		interval: interval,
+		latest:        make(map[string]string),
+		interval:      interval,
+		registryProxy: registryProxy,
 		client: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout: 15 * time.Second,
 		},
 	}
-}
-
-// Start launches the background checking goroutine.
-func (c *Checker) Start(ctx context.Context) {
-	go func() {
-		ticker := time.NewTicker(c.interval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				// Check is called from refresh(), not from here.
-				// The ticker just exists to allow future autonomous re-checks.
-			}
-		}
-	}()
 }
 
 // Check fetches latest versions for all unique repo+chart combinations.
@@ -109,7 +93,9 @@ func (c *Checker) Check(repos []model.HelmRepositoryInfo, releases []model.HelmR
 			continue
 		}
 
-		results[key] = version
+		if version != "" {
+			results[key] = version
+		}
 
 		// Rate limit: max 1 request/second
 		time.Sleep(time.Second)
@@ -120,6 +106,8 @@ func (c *Checker) Check(repos []model.HelmRepositoryInfo, releases []model.HelmR
 		c.latest[k] = v
 	}
 	c.mu.Unlock()
+
+	slog.Info("version check complete", "checked", len(checks), "resolved", len(results))
 }
 
 // GetLatest returns the latest known version for a repo+chart combination.
@@ -129,49 +117,51 @@ func (c *Checker) GetLatest(repoURL, chartName string) string {
 	return c.latest[repoURL+"/"+chartName]
 }
 
-// checkOCI queries an OCI registry for the latest tag of a chart.
-// OCI repos have URLs like oci://host/path — we query /v2/<path>/<chart>/tags/list
-func (c *Checker) checkOCI(repoURL, chartName string) (string, error) {
-	// Strip oci:// prefix
+// resolveUpstream converts a proxy OCI URL to the upstream registry.
+// e.g. "oci://192.168.1.43:5000/ghcr.io/grafana/helm-charts" → ("ghcr.io", "grafana/helm-charts")
+// If not a proxy URL, returns the host and path as-is.
+func (c *Checker) resolveUpstream(repoURL string) (host, path string) {
 	addr := strings.TrimPrefix(repoURL, "oci://")
-
-	// Split into host and path
 	parts := strings.SplitN(addr, "/", 2)
-	host := parts[0]
-	path := ""
+	host = parts[0]
 	if len(parts) > 1 {
 		path = parts[1]
 	}
 
-	// Build full image path
+	// If the host matches our proxy, the first path segment is the upstream registry
+	if c.registryProxy != "" && host == c.registryProxy {
+		pathParts := strings.SplitN(path, "/", 2)
+		if len(pathParts) >= 1 && strings.Contains(pathParts[0], ".") {
+			host = pathParts[0]
+			path = ""
+			if len(pathParts) > 1 {
+				path = pathParts[1]
+			}
+		}
+	}
+
+	// docker.io → registry-1.docker.io
+	if host == "docker.io" {
+		host = "registry-1.docker.io"
+	}
+
+	return host, path
+}
+
+// checkOCI queries an OCI registry for the latest tag of a chart.
+func (c *Checker) checkOCI(repoURL, chartName string) (string, error) {
+	host, path := c.resolveUpstream(repoURL)
+
 	imagePath := chartName
 	if path != "" {
 		imagePath = path + "/" + chartName
 	}
 
-	// Try HTTPS first, fall back to HTTP (for insecure registries)
-	var resp *http.Response
-	var err error
+	url := fmt.Sprintf("https://%s/v2/%s/tags/list", host, imagePath)
 
-	for _, scheme := range []string{"https", "http"} {
-		url := fmt.Sprintf("%s://%s/v2/%s/tags/list", scheme, host, imagePath)
-		resp, err = c.client.Get(url)
-		if err == nil {
-			break
-		}
-	}
+	body, err := c.fetchWithAuth(url)
 	if err != nil {
-		return "", fmt.Errorf("fetching tags: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("registry returned %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1MB limit
-	if err != nil {
-		return "", fmt.Errorf("reading response: %w", err)
+		return "", err
 	}
 
 	var tagList struct {
@@ -182,6 +172,119 @@ func (c *Checker) checkOCI(repoURL, chartName string) (string, error) {
 	}
 
 	return highestSemver(tagList.Tags), nil
+}
+
+// fetchWithAuth performs an HTTP GET, handling OCI token-based auth (WWW-Authenticate challenge).
+func (c *Checker) fetchWithAuth(url string) ([]byte, error) {
+	resp, err := c.client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("fetching %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	// If 401, try token auth
+	if resp.StatusCode == http.StatusUnauthorized {
+		challenge := resp.Header.Get("Www-Authenticate")
+		if challenge == "" {
+			return nil, fmt.Errorf("401 with no WWW-Authenticate header")
+		}
+
+		token, err := c.getToken(challenge)
+		if err != nil {
+			return nil, fmt.Errorf("getting auth token: %w", err)
+		}
+
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp2, err := c.client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("authenticated request: %w", err)
+		}
+		defer resp2.Body.Close()
+
+		if resp2.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("registry returned %d after auth", resp2.StatusCode)
+		}
+
+		return io.ReadAll(io.LimitReader(resp2.Body, 1<<20))
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("registry returned %d", resp.StatusCode)
+	}
+
+	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+}
+
+// getToken parses a WWW-Authenticate Bearer challenge and fetches an anonymous token.
+// Challenge format: Bearer realm="https://...",service="...",scope="..."
+func (c *Checker) getToken(challenge string) (string, error) {
+	challenge = strings.TrimPrefix(challenge, "Bearer ")
+
+	params := parseAuthParams(challenge)
+	realm := params["realm"]
+	if realm == "" {
+		return "", fmt.Errorf("no realm in challenge: %s", challenge)
+	}
+
+	tokenURL := realm
+	sep := "?"
+	if service := params["service"]; service != "" {
+		tokenURL += sep + "service=" + service
+		sep = "&"
+	}
+	if scope := params["scope"]; scope != "" {
+		tokenURL += sep + "scope=" + scope
+	}
+
+	resp, err := c.client.Get(tokenURL)
+	if err != nil {
+		return "", fmt.Errorf("fetching token from %s: %w", tokenURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("token endpoint returned %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+
+	var tokenResp struct {
+		Token       string `json:"token"`
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return "", fmt.Errorf("parsing token response: %w", err)
+	}
+
+	if tokenResp.Token != "" {
+		return tokenResp.Token, nil
+	}
+	return tokenResp.AccessToken, nil
+}
+
+// parseAuthParams parses key="value" pairs from a WWW-Authenticate header value.
+func parseAuthParams(s string) map[string]string {
+	params := make(map[string]string)
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		eq := strings.IndexByte(part, '=')
+		if eq < 0 {
+			continue
+		}
+		key := strings.TrimSpace(part[:eq])
+		val := strings.TrimSpace(part[eq+1:])
+		val = strings.Trim(val, "\"")
+		params[key] = val
+	}
+	return params
 }
 
 // checkHTTP fetches a Helm HTTP repo's index.yaml and finds the latest chart version.

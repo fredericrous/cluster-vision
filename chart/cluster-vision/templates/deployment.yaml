@@ -29,6 +29,10 @@ spec:
             - name: CLUSTER_NAME
               value: "{{ .Values.clusterName }}"
             {{- end }}
+            {{- if .Values.registryProxy }}
+            - name: REGISTRY_PROXY
+              value: "{{ .Values.registryProxy }}"
+            {{- end }}
             {{- if .Values.dataSources }}
             - name: DATA_SOURCES
               value: {{ include "cluster-vision.dataSourcesJSON" . | quote }}

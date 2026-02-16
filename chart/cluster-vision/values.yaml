@@ -40,6 +40,10 @@ dataSources: []
 #       name: infra-docker-compose
 #       key: docker-compose.yaml
 
+# OCI registry proxy host:port (e.g. Zot). When set, the version checker resolves
+# upstream registry URLs instead of querying the proxy (which only has cached tags).
+registryProxy: ""
+
 refresh: 5m
 
 resources:

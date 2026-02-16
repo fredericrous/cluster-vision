@@ -28,6 +28,9 @@ func main() {
 	if v := os.Getenv("CLUSTER_NAME"); v != "" {
 		cfg.ClusterName = v
 	}
+	if v := os.Getenv("REGISTRY_PROXY"); v != "" {
+		cfg.RegistryProxy = v
+	}
 
 	// Data sources from env
 	if v := os.Getenv("DATA_SOURCES"); v != "" {

@@ -24,6 +24,7 @@ type Config struct {
 	ClusterName     string
 	DataSources     []model.DataSource
 	RefreshInterval time.Duration
+	RegistryProxy   string // host:port of local OCI proxy (e.g. Zot) for upstream resolution
 }
 
 // Server serves the diagram API.
@@ -66,7 +67,7 @@ func New(cfg Config) (*Server, error) {
 		slog.Info("added kubernetes data source", "name", ds.Name)
 	}
 
-	checker := versions.NewChecker(cfg.RefreshInterval)
+	checker := versions.NewChecker(cfg.RefreshInterval, cfg.RegistryProxy)
 
 	return &Server{cfg: cfg, k8sParsers: parsers, checker: checker}, nil
 }
@@ -76,9 +77,8 @@ func (s *Server) Start(ctx context.Context) error {
 	// Initial generation
 	s.refresh(ctx)
 
-	// Background refresh and version checking
+	// Background refresh
 	go s.refreshLoop(ctx)
-	s.checker.Start(ctx)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/diagrams", s.handleDiagrams)
