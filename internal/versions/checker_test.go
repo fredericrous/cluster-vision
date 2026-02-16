@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func TestHighestSemver(t *testing.T) {
+func TestHighestStableSemver(t *testing.T) {
 	tests := []struct {
 		name     string
 		versions []string
@@ -13,7 +13,9 @@ func TestHighestSemver(t *testing.T) {
 	}{
 		{"simple", []string{"1.0.0", "2.0.0", "1.5.0"}, "2.0.0"},
 		{"with v prefix", []string{"v1.0.0", "v2.1.0", "v1.5.3"}, "v2.1.0"},
-		{"pre-release lower", []string{"1.0.0", "1.0.1-rc1", "1.0.1"}, "1.0.1"},
+		{"pre-release skipped", []string{"1.0.0", "1.0.1-rc1", "1.0.1"}, "1.0.1"},
+		{"only pre-release", []string{"1.0.0-rc1", "1.0.0-alpha", "1.0.0-beta"}, ""},
+		{"rc higher than stable ignored", []string{"3.1.0-rc.2", "3.5.2", "3.0.0"}, "3.5.2"},
 		{"patch ordering", []string{"1.2.3", "1.2.10", "1.2.9"}, "1.2.10"},
 		{"empty list", []string{}, ""},
 		{"non-semver ignored", []string{"latest", "main", "1.0.0"}, "1.0.0"},
@@ -23,9 +25,9 @@ func TestHighestSemver(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := highestSemver(tt.versions)
+			got := highestStableSemver(tt.versions)
 			if got != tt.want {
-				t.Errorf("highestSemver(%v) = %q, want %q", tt.versions, got, tt.want)
+				t.Errorf("highestStableSemver(%v) = %q, want %q", tt.versions, got, tt.want)
 			}
 		})
 	}
@@ -143,6 +145,33 @@ func TestParseAuthParams(t *testing.T) {
 	}
 	if params["scope"] != "repository:grafana/helm-charts/grafana:pull" {
 		t.Errorf("scope = %q", params["scope"])
+	}
+}
+
+func TestParseLinkNext(t *testing.T) {
+	tests := []struct {
+		name    string
+		link    string
+		current string
+		want    string
+	}{
+		{
+			"ghcr pagination",
+			`</v2/kyverno/charts/kyverno/tags/list?n=1000&last=3.0.0>; rel="next"`,
+			"https://ghcr.io/v2/kyverno/charts/kyverno/tags/list?n=1000",
+			"https://ghcr.io/v2/kyverno/charts/kyverno/tags/list?n=1000&last=3.0.0",
+		},
+		{"empty", "", "https://ghcr.io/foo", ""},
+		{"no next rel", `</v2/foo>; rel="prev"`, "https://ghcr.io/foo", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseLinkNext(tt.link, tt.current)
+			if got != tt.want {
+				t.Errorf("parseLinkNext(%q) = %q, want %q", tt.link, got, tt.want)
+			}
+		})
 	}
 }
 

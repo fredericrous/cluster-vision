@@ -21,6 +21,7 @@ import (
 type Checker struct {
 	mu            sync.RWMutex
 	latest        map[string]string // "repoURL/chartName" → latest version
+	tokenCache    map[string]string // host → bearer token (for paginated requests)
 	interval      time.Duration
 	registryProxy string // e.g. "192.168.1.43:5000" — if set, OCI URLs through this host are resolved to upstream
 	client        *http.Client
@@ -149,6 +150,7 @@ func (c *Checker) resolveUpstream(repoURL string) (host, path string) {
 }
 
 // checkOCI queries an OCI registry for the latest tag of a chart.
+// Follows pagination (Link headers) to collect all tags.
 func (c *Checker) checkOCI(repoURL, chartName string) (string, error) {
 	host, path := c.resolveUpstream(repoURL)
 
@@ -157,28 +159,35 @@ func (c *Checker) checkOCI(repoURL, chartName string) (string, error) {
 		imagePath = path + "/" + chartName
 	}
 
-	url := fmt.Sprintf("https://%s/v2/%s/tags/list", host, imagePath)
+	var allTags []string
+	url := fmt.Sprintf("https://%s/v2/%s/tags/list?n=1000", host, imagePath)
 
-	body, err := c.fetchWithAuth(url)
-	if err != nil {
-		return "", err
+	for url != "" {
+		body, nextURL, err := c.fetchWithAuthPaginated(url)
+		if err != nil {
+			return "", err
+		}
+
+		var tagList struct {
+			Tags []string `json:"tags"`
+		}
+		if err := json.Unmarshal(body, &tagList); err != nil {
+			return "", fmt.Errorf("parsing tags: %w", err)
+		}
+
+		allTags = append(allTags, tagList.Tags...)
+		url = nextURL
 	}
 
-	var tagList struct {
-		Tags []string `json:"tags"`
-	}
-	if err := json.Unmarshal(body, &tagList); err != nil {
-		return "", fmt.Errorf("parsing tags: %w", err)
-	}
-
-	return highestSemver(tagList.Tags), nil
+	return highestStableSemver(allTags), nil
 }
 
-// fetchWithAuth performs an HTTP GET, handling OCI token-based auth (WWW-Authenticate challenge).
-func (c *Checker) fetchWithAuth(url string) ([]byte, error) {
+// fetchWithAuthPaginated performs an HTTP GET with OCI token auth, returning the body
+// and the next page URL (from Link header) if any.
+func (c *Checker) fetchWithAuthPaginated(url string) (body []byte, nextURL string, err error) {
 	resp, err := c.client.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("fetching %s: %w", url, err)
+		return nil, "", fmt.Errorf("fetching %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 
@@ -186,38 +195,86 @@ func (c *Checker) fetchWithAuth(url string) ([]byte, error) {
 	if resp.StatusCode == http.StatusUnauthorized {
 		challenge := resp.Header.Get("Www-Authenticate")
 		if challenge == "" {
-			return nil, fmt.Errorf("401 with no WWW-Authenticate header")
+			return nil, "", fmt.Errorf("401 with no WWW-Authenticate header")
 		}
 
 		token, err := c.getToken(challenge)
 		if err != nil {
-			return nil, fmt.Errorf("getting auth token: %w", err)
+			return nil, "", fmt.Errorf("getting auth token: %w", err)
 		}
+
+		// Cache token for subsequent paginated requests
+		c.mu.Lock()
+		if c.tokenCache == nil {
+			c.tokenCache = make(map[string]string)
+		}
+		c.tokenCache[extractHost(url)] = token
+		c.mu.Unlock()
 
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
 
 		resp2, err := c.client.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("authenticated request: %w", err)
+			return nil, "", fmt.Errorf("authenticated request: %w", err)
 		}
 		defer resp2.Body.Close()
 
 		if resp2.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("registry returned %d after auth", resp2.StatusCode)
+			return nil, "", fmt.Errorf("registry returned %d after auth", resp2.StatusCode)
 		}
 
-		return io.ReadAll(io.LimitReader(resp2.Body, 1<<20))
+		b, err := io.ReadAll(io.LimitReader(resp2.Body, 1<<20))
+		return b, parseLinkNext(resp2.Header.Get("Link"), url), err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("registry returned %d", resp.StatusCode)
+		return nil, "", fmt.Errorf("registry returned %d", resp.StatusCode)
 	}
 
-	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return b, parseLinkNext(resp.Header.Get("Link"), url), err
+}
+
+// extractHost returns the scheme+host portion of a URL for token cache keying.
+func extractHost(rawURL string) string {
+	if idx := strings.Index(rawURL, "//"); idx >= 0 {
+		rest := rawURL[idx+2:]
+		if slash := strings.IndexByte(rest, '/'); slash >= 0 {
+			return rawURL[:idx+2+slash]
+		}
+	}
+	return rawURL
+}
+
+// parseLinkNext extracts the next page URL from an OCI Link header.
+// Format: </v2/.../tags/list?n=100&last=xxx>; rel="next"
+func parseLinkNext(link, currentURL string) string {
+	if link == "" {
+		return ""
+	}
+	for _, part := range strings.Split(link, ",") {
+		part = strings.TrimSpace(part)
+		if !strings.Contains(part, `rel="next"`) {
+			continue
+		}
+		start := strings.IndexByte(part, '<')
+		end := strings.IndexByte(part, '>')
+		if start < 0 || end < 0 || end <= start {
+			continue
+		}
+		nextPath := part[start+1 : end]
+		// If relative URL, make absolute using current URL's base
+		if strings.HasPrefix(nextPath, "/") {
+			base := extractHost(currentURL)
+			return base + nextPath
+		}
+		return nextPath
+	}
+	return ""
 }
 
 // getToken parses a WWW-Authenticate Bearer challenge and fetches an anonymous token.
@@ -323,7 +380,7 @@ func (c *Checker) checkHTTP(repoURL, chartName string) (string, error) {
 		}
 	}
 
-	return highestSemver(versions), nil
+	return highestStableSemver(versions), nil
 }
 
 type helmIndex struct {
@@ -334,14 +391,15 @@ type helmEntry struct {
 	Version string `yaml:"version"`
 }
 
-// highestSemver returns the highest semantic version from a list of version strings.
-func highestSemver(versions []string) string {
+// highestStableSemver returns the highest stable (non-pre-release) semantic version.
+func highestStableSemver(versions []string) string {
 	var semvers []semver
 	for _, v := range versions {
 		sv, ok := parseSemver(v)
-		if ok {
-			semvers = append(semvers, sv)
+		if !ok || sv.pre != "" {
+			continue
 		}
+		semvers = append(semvers, sv)
 	}
 
 	if len(semvers) == 0 {
