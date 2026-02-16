@@ -20,16 +20,19 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 		}
 	}
 
-	// Build repo lookup: "namespace/name" → HelmRepositoryInfo
+	// Build repo lookup: "cluster/namespace/name" → HelmRepositoryInfo
 	repoByKey := make(map[string]model.HelmRepositoryInfo)
 	for _, r := range data.HelmRepositories {
-		repoByKey[r.Namespace+"/"+r.Name] = r
+		repoByKey[r.Cluster+"/"+r.Namespace+"/"+r.Name] = r
 	}
 
-	// Sort releases by namespace, then name
+	// Sort releases by cluster, namespace, then name
 	sorted := make([]model.HelmReleaseInfo, len(data.HelmReleases))
 	copy(sorted, data.HelmReleases)
 	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Cluster != sorted[j].Cluster {
+			return sorted[i].Cluster < sorted[j].Cluster
+		}
 		if sorted[i].Namespace != sorted[j].Namespace {
 			return sorted[i].Namespace < sorted[j].Namespace
 		}
@@ -38,13 +41,13 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 
 	var b strings.Builder
 
-	b.WriteString("| Release | Namespace | Chart | Version | Latest | Repo Type | Repository |\n")
-	b.WriteString("|---------|-----------|-------|---------|--------|-----------|------------|\n")
+	b.WriteString("| Cluster | Release | Namespace | Chart | Version | Latest | Repo Type | Repository |\n")
+	b.WriteString("|---------|---------|-----------|-------|---------|--------|-----------|------------|\n")
 
 	var outdatedCount int
 
 	for _, rel := range sorted {
-		repo := repoByKey[rel.RepoNS+"/"+rel.RepoName]
+		repo := repoByKey[rel.Cluster+"/"+rel.RepoNS+"/"+rel.RepoName]
 		repoType := repo.Type
 		if repoType == "oci" {
 			repoType = "OCI"
@@ -75,8 +78,8 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 			version = "-"
 		}
 
-		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s |\n",
-			rel.Name, rel.Namespace, rel.ChartName, version, latest, repoType, repoURL))
+		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s | %s |\n",
+			rel.Cluster, rel.Name, rel.Namespace, rel.ChartName, version, latest, repoType, repoURL))
 	}
 
 	if outdatedCount > 0 {

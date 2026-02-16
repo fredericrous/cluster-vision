@@ -64,6 +64,11 @@ func (p *KubernetesParser) ParseSecurity(ctx context.Context) ([]model.Namespace
 	return p.parseNamespaces(ctx), p.parseSecurityPolicies(ctx)
 }
 
+// ParseHelm returns HelmRelease and HelmRepository data for this cluster.
+func (p *KubernetesParser) ParseHelm(ctx context.Context) ([]model.HelmReleaseInfo, []model.HelmRepositoryInfo) {
+	return p.parseHelmReleases(ctx), p.parseHelmRepositories(ctx)
+}
+
 // ParseAll queries all supported resources and returns cluster data.
 func (p *KubernetesParser) ParseAll(ctx context.Context) *model.ClusterData {
 	data := &model.ClusterData{}
@@ -526,6 +531,7 @@ func (p *KubernetesParser) parseHelmReleases(ctx context.Context) []model.HelmRe
 		result = append(result, model.HelmReleaseInfo{
 			Name:       item.GetName(),
 			Namespace:  item.GetNamespace(),
+			Cluster:    p.clusterName,
 			ChartName:  chartName,
 			Version:    version,
 			RepoName:   repoName,
@@ -561,6 +567,7 @@ func (p *KubernetesParser) parseHelmRepositories(ctx context.Context) []model.He
 		result = append(result, model.HelmRepositoryInfo{
 			Name:      item.GetName(),
 			Namespace: item.GetNamespace(),
+			Cluster:   p.clusterName,
 			Type:      repoType,
 			URL:       strVal(spec, "url"),
 		})

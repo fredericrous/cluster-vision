@@ -21,6 +21,7 @@ type ClusterData struct {
 type HelmReleaseInfo struct {
 	Name       string
 	Namespace  string
+	Cluster    string
 	ChartName  string
 	Version    string // deployed chart version
 	RepoName   string // sourceRef name
@@ -32,6 +33,7 @@ type HelmReleaseInfo struct {
 type HelmRepositoryInfo struct {
 	Name      string
 	Namespace string
+	Cluster   string
 	Type      string // "oci" or "default" (HTTP)
 	URL       string
 }
