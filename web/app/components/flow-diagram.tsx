@@ -57,6 +57,78 @@ const clusterColors: Record<string, string> = {
   NAS: "#14b8a6",
 };
 
+// Barycenter heuristic: order nodes within each layer so edges go
+// as straight down as possible, minimizing crossings.
+// Two passes (down then up) for good convergence.
+function minimizeCrossings(
+  byLayer: Map<string, FlowNodeRaw[]>,
+  edges: FlowEdgeRaw[]
+): void {
+  // Build upward/downward neighbor maps
+  const upNeighbors = new Map<string, string[]>(); // target → sources
+  const downNeighbors = new Map<string, string[]>(); // source → targets
+  for (const e of edges) {
+    if (!upNeighbors.has(e.target)) upNeighbors.set(e.target, []);
+    upNeighbors.get(e.target)!.push(e.source);
+    if (!downNeighbors.has(e.source)) downNeighbors.set(e.source, []);
+    downNeighbors.get(e.source)!.push(e.target);
+  }
+
+  const nodeIndex = new Map<string, number>();
+  const activeLayers = LAYER_ORDER.filter(
+    (l) => (byLayer.get(l)?.length ?? 0) > 0
+  );
+
+  // Initialize with alphabetical order
+  for (const layer of activeLayers) {
+    const nodes = byLayer.get(layer)!;
+    nodes.sort((a, b) => a.label.localeCompare(b.label));
+    for (let i = 0; i < nodes.length; i++) nodeIndex.set(nodes[i].id, i);
+  }
+
+  function sortByBarycenter(
+    nodes: FlowNodeRaw[],
+    getNeighbors: (id: string) => string[]
+  ) {
+    const bary = new Map<string, number>();
+    for (const n of nodes) {
+      const nbrs = getNeighbors(n.id);
+      if (nbrs.length === 0) continue;
+      let sum = 0,
+        count = 0;
+      for (const nbr of nbrs) {
+        if (nodeIndex.has(nbr)) {
+          sum += nodeIndex.get(nbr)!;
+          count++;
+        }
+      }
+      if (count > 0) bary.set(n.id, sum / count);
+    }
+
+    nodes.sort((a, b) => {
+      const ba = bary.get(a.id);
+      const bb = bary.get(b.id);
+      if (ba !== undefined && bb !== undefined) return ba - bb;
+      if (ba !== undefined) return -1;
+      if (bb !== undefined) return 1;
+      return a.label.localeCompare(b.label);
+    });
+
+    for (let i = 0; i < nodes.length; i++) nodeIndex.set(nodes[i].id, i);
+  }
+
+  // Pass 1: top-down (sort by upstream dependency positions)
+  for (const layer of activeLayers) {
+    sortByBarycenter(byLayer.get(layer)!, (id) => upNeighbors.get(id) || []);
+  }
+  // Pass 2: bottom-up (sort by downstream dependent positions)
+  for (let i = activeLayers.length - 1; i >= 0; i--) {
+    sortByBarycenter(byLayer.get(activeLayers[i])!, (id) =>
+      downNeighbors.get(id) || []
+    );
+  }
+}
+
 function buildLayout(
   rawNodes: FlowNodeRaw[],
   rawEdges: FlowEdgeRaw[]
@@ -71,10 +143,17 @@ function buildLayout(
     const bucket = byLayer.get(n.layer) || byLayer.get("Uncategorized")!;
     bucket.push(n);
   }
-  // Sort within each layer alphabetically
-  for (const nodes of byLayer.values()) {
-    nodes.sort((a, b) => a.label.localeCompare(b.label));
+
+  // Order nodes within layers to minimize edge crossings
+  minimizeCrossings(byLayer, rawEdges);
+
+  // Find widest layer to align all groups to the same width
+  let maxCols = 0;
+  for (const layer of LAYER_ORDER) {
+    const count = byLayer.get(layer)!.length;
+    if (count > 0) maxCols = Math.max(maxCols, Math.min(count, MAX_COLS));
   }
+  const uniformW = maxCols * (NODE_W + GAP_X) - GAP_X + 2 * PAD_X;
 
   const allNodes: Node[] = [];
   let currentY = 0;
@@ -85,8 +164,12 @@ function buildLayout(
 
     const cols = Math.min(layerNodes.length, MAX_COLS);
     const rows = Math.ceil(layerNodes.length / cols);
-    const groupW = cols * (NODE_W + GAP_X) - GAP_X + 2 * PAD_X;
+    const groupW = Math.max(uniformW, cols * (NODE_W + GAP_X) - GAP_X + 2 * PAD_X);
     const groupH = PAD_TOP + rows * (NODE_H + GAP_Y) - GAP_Y + PAD_BOTTOM;
+
+    // Center nodes within the uniform-width group
+    const contentW = cols * (NODE_W + GAP_X) - GAP_X;
+    const offsetX = PAD_X + (groupW - 2 * PAD_X - contentW) / 2;
 
     const groupId = `group-${layer}`;
     allNodes.push({
@@ -107,7 +190,7 @@ function buildLayout(
         id: n.id,
         type: "flow",
         position: {
-          x: PAD_X + col * (NODE_W + GAP_X),
+          x: offsetX + col * (NODE_W + GAP_X),
           y: PAD_TOP + row * (NODE_H + GAP_Y),
         },
         parentId: groupId,
