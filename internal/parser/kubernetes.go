@@ -69,6 +69,11 @@ func (p *KubernetesParser) ParseHelm(ctx context.Context) ([]model.HelmReleaseIn
 	return p.parseHelmReleases(ctx), p.parseHelmRepositories(ctx)
 }
 
+// ParseFlux returns Flux Kustomization data for this cluster.
+func (p *KubernetesParser) ParseFlux(ctx context.Context) []model.FluxKustomization {
+	return p.parseFluxKustomizations(ctx)
+}
+
 // ParseAll queries all supported resources and returns cluster data.
 func (p *KubernetesParser) ParseAll(ctx context.Context) *model.ClusterData {
 	data := &model.ClusterData{}
@@ -162,6 +167,7 @@ func (p *KubernetesParser) parseFluxKustomizations(ctx context.Context) []model.
 			Namespace: ns,
 			Path:      path,
 			DependsOn: deps,
+			Cluster:   p.clusterName,
 		})
 	}
 	return result

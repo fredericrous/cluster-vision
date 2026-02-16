@@ -2,6 +2,13 @@
   max-width: 100%;
 }
 
+.flowPage {
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 4rem);
+}
+
 .header {
   display: flex;
   align-items: baseline;
@@ -25,6 +32,15 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1.5rem;
+}
+
+.flowContent {
+  flex: 1;
+  min-height: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  position: relative;
 }
 
 .viewport {

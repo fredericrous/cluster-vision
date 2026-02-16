@@ -1,0 +1,77 @@
+.container {
+  width: 100%;
+  height: 100%;
+}
+
+/* Override xyflow defaults for dark theme */
+.container :global(.react-flow__background) {
+  background: var(--bg-secondary);
+}
+
+.container :global(.react-flow__controls) {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.container :global(.react-flow__controls-button) {
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  fill: var(--text-secondary);
+}
+
+.container :global(.react-flow__controls-button:hover) {
+  background: var(--bg-primary);
+}
+
+.container :global(.react-flow__minimap) {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.container :global(.react-flow__edge-path) {
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+}
+
+.container :global(.react-flow__handle) {
+  width: 6px;
+  height: 6px;
+  background: var(--text-muted);
+  border: none;
+}
+
+.legend {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  z-index: 5;
+  flex-wrap: wrap;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legendSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.legendDivider {
+  width: 1px;
+  background: var(--border);
+  align-self: stretch;
+}

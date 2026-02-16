@@ -121,7 +121,7 @@ func (s *Server) refresh(ctx context.Context) {
 	clusterData := s.k8sParsers[0].ParseAll(ctx)
 	clusterData.PrimaryCluster = s.cfg.ClusterName
 
-	// Additional clusters — security + helm data
+	// Additional clusters — security + helm + flux data
 	for _, p := range s.k8sParsers[1:] {
 		ns, sp := p.ParseSecurity(ctx)
 		clusterData.Namespaces = append(clusterData.Namespaces, ns...)
@@ -130,6 +130,8 @@ func (s *Server) refresh(ctx context.Context) {
 		hr, repo := p.ParseHelm(ctx)
 		clusterData.HelmReleases = append(clusterData.HelmReleases, hr...)
 		clusterData.HelmRepositories = append(clusterData.HelmRepositories, repo...)
+
+		clusterData.Flux = append(clusterData.Flux, p.ParseFlux(ctx)...)
 	}
 
 	// Sort namespaces and security policies deterministically

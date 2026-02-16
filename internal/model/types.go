@@ -106,6 +106,7 @@ type FluxKustomization struct {
 	Namespace string
 	Path      string
 	DependsOn []string
+	Cluster   string
 }
 
 // GatewayInfo represents a Gateway API Gateway resource.
@@ -180,6 +181,6 @@ type TerraformNode struct {
 type DiagramResult struct {
 	ID      string `json:"id"`
 	Title   string `json:"title"`
-	Type    string `json:"type"` // "mermaid" or "markdown"
+	Type    string `json:"type"` // "mermaid", "markdown", "table", or "flow"
 	Content string `json:"content"`
 }
