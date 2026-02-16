@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, type ReactNode } from "react";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import type { DiagramResult } from "../api.server";
 import styles from "./diagram-page.module.css";
@@ -13,9 +13,14 @@ const MarkdownTable = lazy(() =>
 interface DiagramPageProps {
   diagram: DiagramResult;
   generatedAt: string;
+  children?: ReactNode;
 }
 
-export function DiagramPage({ diagram, generatedAt }: DiagramPageProps) {
+export function DiagramPage({
+  diagram,
+  generatedAt,
+  children,
+}: DiagramPageProps) {
   const formattedTime = new Date(generatedAt).toLocaleString();
 
   return (
@@ -31,11 +36,15 @@ export function DiagramPage({ diagram, generatedAt }: DiagramPageProps) {
             <Suspense
               fallback={<div className={styles.loading}>Rendering...</div>}
             >
-              {diagram.type === "mermaid" ? (
-                <MermaidDiagram content={diagram.content} id={diagram.id} />
-              ) : (
-                <MarkdownTable content={diagram.content} />
-              )}
+              {children
+                ? children
+                : diagram.type === "mermaid"
+                  ? (
+                    <MermaidDiagram content={diagram.content} id={diagram.id} />
+                  )
+                  : (
+                    <MarkdownTable content={diagram.content} />
+                  )}
             </Suspense>
           </ScrollArea.Viewport>
           <ScrollArea.Scrollbar

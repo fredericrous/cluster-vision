@@ -1,15 +1,27 @@
 package diagram
 
 import (
-	"fmt"
+	"encoding/json"
 	"sort"
-	"strings"
 
 	"github.com/fredericrous/cluster-vision/internal/model"
 	"github.com/fredericrous/cluster-vision/internal/versions"
 )
 
-// GenerateVersions produces a markdown table of deployed HelmRelease versions.
+// VersionRow represents a single row in the versions table.
+type VersionRow struct {
+	Cluster   string `json:"cluster"`
+	Release   string `json:"release"`
+	Namespace string `json:"namespace"`
+	Chart     string `json:"chart"`
+	Version   string `json:"version"`
+	Latest    string `json:"latest"`
+	Outdated  bool   `json:"outdated"`
+	RepoType  string `json:"repoType"`
+	RepoURL   string `json:"repoUrl"`
+}
+
+// GenerateVersions produces a table of deployed HelmRelease versions.
 func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.DiagramResult {
 	if len(data.HelmReleases) == 0 {
 		return model.DiagramResult{
@@ -39,12 +51,7 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 		return sorted[i].Name < sorted[j].Name
 	})
 
-	var b strings.Builder
-
-	b.WriteString("| Cluster | Release | Namespace | Chart | Version | Latest | Repo Type | Repository |\n")
-	b.WriteString("|---------|---------|-----------|-------|---------|--------|-----------|------------|\n")
-
-	var outdatedCount int
+	var rows []VersionRow
 
 	for _, rel := range sorted {
 		repo := repoByKey[rel.Cluster+"/"+rel.RepoNS+"/"+rel.RepoName]
@@ -63,12 +70,12 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 		}
 
 		latest := "-"
+		outdated := false
 		if checker != nil {
 			if v := checker.GetLatest(repo.URL, rel.ChartName); v != "" {
 				latest = v
 				if latest != rel.Version && rel.Version != "" {
-					latest = fmt.Sprintf("**%s**", latest)
-					outdatedCount++
+					outdated = true
 				}
 			}
 		}
@@ -78,18 +85,25 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 			version = "-"
 		}
 
-		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s | %s |\n",
-			rel.Cluster, rel.Name, rel.Namespace, rel.ChartName, version, latest, repoType, repoURL))
+		rows = append(rows, VersionRow{
+			Cluster:   rel.Cluster,
+			Release:   rel.Name,
+			Namespace: rel.Namespace,
+			Chart:     rel.ChartName,
+			Version:   version,
+			Latest:    latest,
+			Outdated:  outdated,
+			RepoType:  repoType,
+			RepoURL:   repoURL,
+		})
 	}
 
-	if outdatedCount > 0 {
-		b.WriteString(fmt.Sprintf("\n*%d release(s) have newer versions available (shown in **bold**).*\n", outdatedCount))
-	}
+	tableJSON, _ := json.Marshal(rows)
 
 	return model.DiagramResult{
 		ID:      "versions",
 		Title:   "Component Versions",
-		Type:    "markdown",
-		Content: b.String(),
+		Type:    "table",
+		Content: string(tableJSON),
 	}
 }

@@ -1,6 +1,7 @@
 package diagram
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -8,15 +9,28 @@ import (
 	"github.com/fredericrous/cluster-vision/internal/model"
 )
 
-// GenerateSecurity produces a markdown security matrix table and coverage pie chart.
-func GenerateSecurity(data *model.ClusterData) model.DiagramResult {
+// SecurityRow represents a single row in the security table.
+type SecurityRow struct {
+	Cluster     string `json:"cluster"`
+	Namespace   string `json:"namespace"`
+	Ingress     string `json:"ingress"`
+	Ambient     string `json:"ambient"`
+	MTLS        string `json:"mtls"`
+	MTLSClient  string `json:"mtlsClient"`
+	ExtAuth     string `json:"extAuth"`
+	Backup      string `json:"backup"`
+	PodSecurity string `json:"podSecurity"`
+}
+
+// GenerateSecurity produces a table diagram and a coverage pie chart.
+func GenerateSecurity(data *model.ClusterData) []model.DiagramResult {
 	if len(data.Namespaces) == 0 {
-		return model.DiagramResult{
+		return []model.DiagramResult{{
 			ID:      "security",
 			Title:   "Security Matrix",
 			Type:    "markdown",
 			Content: "*No namespace data available.*",
-		}
+		}}
 	}
 
 	// Build set of namespaces with ext-auth policies (keyed by cluster/namespace)
@@ -62,31 +76,20 @@ func GenerateSecurity(data *model.ClusterData) model.DiagramResult {
 		return sorted[i].Name < sorted[j].Name
 	})
 
-	var b strings.Builder
-
-	// Table
-	b.WriteString("| Cluster | Namespace | Ingress | Istio Ambient | mTLS | mTLS Client | Ext Auth | Backup | Pod Security |\n")
-	b.WriteString("|---------|-----------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|\n")
-
+	var rows []SecurityRow
 	var ingressCount, ambientCount, mtlsCount, clientMTLSCount, authCount, backupCount int
 
 	for _, ns := range sorted {
 		nsKey := ns.Cluster + "/" + ns.Name
-		ambient := boolIcon(ns.Ambient)
-		mtls := boolIcon(ns.MTLS)
-		auth := boolIcon(extAuthNS[nsKey])
-		backup := boolIcon(ns.Backup)
-		podSec := ns.PodSecurity
-		if podSec == "" {
-			podSec = "-"
-		}
-
 		cmtls := clientMTLS[nsKey]
 		if cmtls == "" {
 			cmtls = "no"
 		}
 
-		ingress := boolIcon(ingressNS[nsKey])
+		podSec := ns.PodSecurity
+		if podSec == "" {
+			podSec = "-"
+		}
 
 		if ingressNS[nsKey] {
 			ingressCount++
@@ -107,12 +110,23 @@ func GenerateSecurity(data *model.ClusterData) model.DiagramResult {
 			backupCount++
 		}
 
-		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
-			ns.Cluster, ns.Name, ingress, ambient, mtls, cmtls, auth, backup, podSec))
+		rows = append(rows, SecurityRow{
+			Cluster:     ns.Cluster,
+			Namespace:   ns.Name,
+			Ingress:     boolIcon(ingressNS[nsKey]),
+			Ambient:     boolIcon(ns.Ambient),
+			MTLS:        boolIcon(ns.MTLS),
+			MTLSClient:  cmtls,
+			ExtAuth:     boolIcon(extAuthNS[nsKey]),
+			Backup:      boolIcon(ns.Backup),
+			PodSecurity: podSec,
+		})
 	}
 
+	tableJSON, _ := json.Marshal(rows)
+
 	// Coverage pie chart
-	b.WriteString("\n```mermaid\n")
+	var b strings.Builder
 	b.WriteString("pie title Security Coverage\n")
 	b.WriteString(fmt.Sprintf("  \"Ingress\" : %d\n", ingressCount))
 	b.WriteString(fmt.Sprintf("  \"Istio Ambient\" : %d\n", ambientCount))
@@ -120,13 +134,20 @@ func GenerateSecurity(data *model.ClusterData) model.DiagramResult {
 	b.WriteString(fmt.Sprintf("  \"Ext Auth\" : %d\n", authCount))
 	b.WriteString(fmt.Sprintf("  \"mTLS Mesh\" : %d\n", mtlsCount))
 	b.WriteString(fmt.Sprintf("  \"mTLS Client\" : %d\n", clientMTLSCount))
-	b.WriteString("```\n")
 
-	return model.DiagramResult{
-		ID:      "security",
-		Title:   "Security Matrix",
-		Type:    "markdown",
-		Content: b.String(),
+	return []model.DiagramResult{
+		{
+			ID:      "security",
+			Title:   "Security Matrix",
+			Type:    "table",
+			Content: string(tableJSON),
+		},
+		{
+			ID:      "security-chart",
+			Title:   "Security Coverage",
+			Type:    "mermaid",
+			Content: b.String(),
+		},
 	}
 }
 
