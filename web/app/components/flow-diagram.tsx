@@ -42,6 +42,14 @@ const MAX_COLS = 8;
 
 const nodeTypes = { flow: FlowNode, layerGroup: LayerGroup };
 
+const layerColors: Record<string, string> = {
+  Foundation: "rgba(59, 130, 246, 0.5)",
+  Platform: "rgba(139, 92, 246, 0.5)",
+  Middleware: "rgba(245, 158, 11, 0.5)",
+  Apps: "rgba(34, 197, 94, 0.5)",
+  Uncategorized: "rgba(100, 116, 139, 0.5)",
+};
+
 const clusterColors: Record<string, string> = {
   Homelab: "#6366f1",
   NAS: "#14b8a6",
@@ -206,6 +214,7 @@ function buildLayout(
         data: {
           label: n.label,
           cluster: n.cluster,
+          layer: n.layer,
           showClusterBadge,
         } satisfies FlowNodeData,
       });
@@ -249,27 +258,40 @@ export function FlowDiagram({ content }: { content: string }) {
         <Controls showInteractive={false} />
         <MiniMap
           nodeColor={(n) => {
-            if (n.type === "layerGroup") return "rgba(100, 116, 139, 0.3)";
-            return "rgba(30, 41, 59, 0.9)";
+            if (n.type === "layerGroup") return "rgba(100, 116, 139, 0.15)";
+            const layer = (n.data as Record<string, unknown>).layer as string;
+            return layerColors[layer] || layerColors.Uncategorized;
           }}
           maskColor="rgba(0, 0, 0, 0.7)"
           pannable
           zoomable
         />
       </ReactFlow>
-      {showClusterLegend && (
-        <div className={styles.legend}>
-          {clusters.map((cluster) => (
-            <span key={cluster} className={styles.legendItem}>
-              <span
-                className={styles.legendSwatch}
-                style={{ background: clusterColors[cluster] || "#64748b" }}
-              />
-              {cluster}
-            </span>
-          ))}
-        </div>
-      )}
+      <div className={styles.legend}>
+        {Object.entries(layerColors).map(([layer, color]) => (
+          <span key={layer} className={styles.legendItem}>
+            <span
+              className={styles.legendSwatch}
+              style={{ background: color }}
+            />
+            {layer}
+          </span>
+        ))}
+        {showClusterLegend && (
+          <>
+            <span className={styles.legendDivider} />
+            {clusters.map((cluster) => (
+              <span key={cluster} className={styles.legendItem}>
+                <span
+                  className={styles.legendSwatch}
+                  style={{ background: clusterColors[cluster] || "#64748b" }}
+                />
+                {cluster}
+              </span>
+            ))}
+          </>
+        )}
+      </div>
     </div>
   );
 }

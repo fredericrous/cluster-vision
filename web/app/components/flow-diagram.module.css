@@ -35,6 +35,11 @@
   stroke-width: 1.5;
 }
 
+.container :global(.react-flow__edge.selected .react-flow__edge-path) {
+  stroke: #f59e0b;
+  stroke-width: 2.5;
+}
+
 .container :global(.react-flow__handle) {
   width: 6px;
   height: 6px;
