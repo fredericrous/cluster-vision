@@ -31,10 +31,14 @@ func GenerateSecurity(data *model.ClusterData) model.DiagramResult {
 		ctpBySection[ctp.SectionName] = ctp.Optional
 	}
 
-	// Cross-reference with HTTPRoutes to get cluster/namespace → client mTLS status
+	// Cross-reference HTTPRoutes with CTPs for client mTLS and ingress exposure
 	// HTTPRoutes are only from the primary cluster
+	ingressNS := make(map[string]bool)   // cluster/namespace → has HTTPRoute
 	clientMTLS := make(map[string]string) // cluster/namespace → "yes"|"optional"
 	for _, route := range data.HTTPRoutes {
+		key := data.PrimaryCluster + "/" + route.Namespace
+		ingressNS[key] = true
+
 		if route.SectionName == "" {
 			continue
 		}
@@ -42,7 +46,6 @@ func GenerateSecurity(data *model.ClusterData) model.DiagramResult {
 		if !hasCTP {
 			continue
 		}
-		key := data.PrimaryCluster + "/" + route.Namespace
 		if !optional {
 			clientMTLS[key] = "yes"
 		} else if clientMTLS[key] != "yes" {
@@ -62,10 +65,10 @@ func GenerateSecurity(data *model.ClusterData) model.DiagramResult {
 	var b strings.Builder
 
 	// Table
-	b.WriteString("| Cluster | Namespace | Istio Ambient | mTLS | mTLS Client | Ext Auth | Backup | Pod Security |\n")
-	b.WriteString("|---------|-----------|:---:|:---:|:---:|:---:|:---:|:---:|\n")
+	b.WriteString("| Cluster | Namespace | Ingress | Istio Ambient | mTLS | mTLS Client | Ext Auth | Backup | Pod Security |\n")
+	b.WriteString("|---------|-----------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|\n")
 
-	var ambientCount, mtlsCount, clientMTLSCount, authCount, backupCount int
+	var ingressCount, ambientCount, mtlsCount, clientMTLSCount, authCount, backupCount int
 
 	for _, ns := range sorted {
 		nsKey := ns.Cluster + "/" + ns.Name
@@ -83,6 +86,11 @@ func GenerateSecurity(data *model.ClusterData) model.DiagramResult {
 			cmtls = "no"
 		}
 
+		ingress := boolIcon(ingressNS[nsKey])
+
+		if ingressNS[nsKey] {
+			ingressCount++
+		}
 		if ns.Ambient {
 			ambientCount++
 		}
@@ -99,13 +107,14 @@ func GenerateSecurity(data *model.ClusterData) model.DiagramResult {
 			backupCount++
 		}
 
-		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s | %s |\n",
-			ns.Cluster, ns.Name, ambient, mtls, cmtls, auth, backup, podSec))
+		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
+			ns.Cluster, ns.Name, ingress, ambient, mtls, cmtls, auth, backup, podSec))
 	}
 
 	// Coverage pie chart
 	b.WriteString("\n```mermaid\n")
 	b.WriteString("pie title Security Coverage\n")
+	b.WriteString(fmt.Sprintf("  \"Ingress\" : %d\n", ingressCount))
 	b.WriteString(fmt.Sprintf("  \"Istio Ambient\" : %d\n", ambientCount))
 	b.WriteString(fmt.Sprintf("  \"Velero Backup\" : %d\n", backupCount))
 	b.WriteString(fmt.Sprintf("  \"Ext Auth\" : %d\n", authCount))
