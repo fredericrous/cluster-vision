@@ -42,6 +42,7 @@ type HelmRepositoryInfo struct {
 type ServiceEntryInfo struct {
 	Name            string
 	Namespace       string
+	Cluster         string
 	Hosts           []string
 	Location        string // "MESH_EXTERNAL" etc
 	EndpointAddress string // remote gateway IP

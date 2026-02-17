@@ -34,9 +34,10 @@ type FlowNode struct {
 
 // FlowEdge represents an edge in the interactive flow diagram.
 type FlowEdge struct {
-	ID     string `json:"id"`
-	Source string `json:"source"`
-	Target string `json:"target"`
+	ID           string `json:"id"`
+	Source       string `json:"source"`
+	Target       string `json:"target"`
+	CrossCluster bool   `json:"crossCluster,omitempty"`
 }
 
 // FlowData holds the complete flow diagram data.
@@ -87,6 +88,122 @@ func transitiveReduce(graph map[string]map[string]bool) map[string]map[string]bo
 		}
 	}
 	return reduced
+}
+
+// discoverCrossClusterEdges finds implicit dependencies between clusters
+// by inspecting MESH_EXTERNAL ServiceEntries with network labels.
+//
+// Algorithm:
+//  1. Build cluster name set from Flux kustomizations.
+//  2. Map network label → cluster name (strip "-network" suffix, case-insensitive match).
+//  3. For each MESH_EXTERNAL SE with a network label, find best matching kustomizations
+//     in source (consumer) and target (provider) clusters.
+//  4. Create edge: target-kust → source-kust (provider before consumer).
+//  5. Deduplicate bidirectional SEs.
+func discoverCrossClusterEdges(data *model.ClusterData, idSet map[string]bool) []FlowEdge {
+	// 1. Build cluster name set
+	clusterNames := make(map[string]bool)
+	for _, k := range data.Flux {
+		clusterNames[k.Cluster] = true
+	}
+
+	// 2. Map network label → cluster name
+	networkToCluster := make(map[string]string)
+	for name := range clusterNames {
+		// e.g. "nas-network" → "NAS", "homelab-network" → "Homelab"
+		networkToCluster[strings.ToLower(name)+"-network"] = name
+	}
+
+	// Helper: find best kustomization in a cluster containing a service name
+	findBestKust := func(cluster, svcName string) string {
+		svcLower := strings.ToLower(svcName)
+		var bestID string
+		var bestScore int
+		for _, k := range data.Flux {
+			if k.Cluster != cluster {
+				continue
+			}
+			nameLower := strings.ToLower(k.Name)
+			if strings.Contains(nameLower, svcLower) {
+				// Prefer exact or closer match (shorter name = more specific)
+				score := 100 - len(nameLower)
+				if score > bestScore || bestID == "" {
+					bestScore = score
+					bestID = k.Cluster + "/" + k.Name
+				}
+			}
+		}
+		// Fallback: look for "platform" in name
+		if bestID == "" {
+			for _, k := range data.Flux {
+				if k.Cluster != cluster {
+					continue
+				}
+				if strings.Contains(strings.ToLower(k.Name), "platform") {
+					bestID = k.Cluster + "/" + k.Name
+					break
+				}
+			}
+		}
+		return bestID
+	}
+
+	// 3. Process MESH_EXTERNAL ServiceEntries
+	seen := make(map[string]bool) // deduplicate edges
+	var edges []FlowEdge
+
+	for _, se := range data.ServiceEntries {
+		if se.Location != "MESH_EXTERNAL" || se.Network == "" {
+			continue
+		}
+
+		targetCluster, ok := networkToCluster[strings.ToLower(se.Network)]
+		if !ok {
+			continue
+		}
+
+		sourceCluster := se.Cluster
+		if sourceCluster == targetCluster {
+			continue
+		}
+
+		// Extract service name from SE name by stripping target cluster prefix
+		svcName := se.Name
+		prefix := strings.ToLower(targetCluster) + "-"
+		if strings.HasPrefix(strings.ToLower(svcName), prefix) {
+			svcName = svcName[len(prefix):]
+		}
+
+		sourceKust := findBestKust(sourceCluster, svcName)
+		targetKust := findBestKust(targetCluster, svcName)
+
+		if sourceKust == "" || targetKust == "" {
+			continue
+		}
+		if !idSet[sourceKust] || !idSet[targetKust] {
+			continue
+		}
+
+		// Deduplicate: canonical key is sorted pair
+		pairKey := targetKust + "→" + sourceKust
+		if targetKust > sourceKust {
+			pairKey = sourceKust + "→" + targetKust
+		}
+		if seen[pairKey] {
+			continue
+		}
+		seen[pairKey] = true
+
+		edgeID := fmt.Sprintf("xc:%s->%s", targetKust, sourceKust)
+		edges = append(edges, FlowEdge{
+			ID:           edgeID,
+			Source:       targetKust,
+			Target:       sourceKust,
+			CrossCluster: true,
+		})
+	}
+
+	return edges
 }
 
 // GenerateDependencies produces a JSON flow diagram of Flux Kustomization dependencies.
@@ -170,6 +287,10 @@ func GenerateDependencies(data *model.ClusterData) model.DiagramResult {
 			})
 		}
 	}
+
+	// Discover cross-cluster edges from ServiceEntries (skip transitive reduction for these)
+	crossEdges := discoverCrossClusterEdges(data, idSet)
+	edges = append(edges, crossEdges...)
 
 	flowData := FlowData{Nodes: nodes, Edges: edges}
 	content, _ := json.Marshal(flowData)

@@ -36,8 +36,12 @@
 }
 
 .container :global(.react-flow__edge.selected .react-flow__edge-path) {
-  stroke: #f59e0b;
-  stroke-width: 2.5;
+  stroke: #ff6b00;
+  stroke-width: 3;
+}
+
+.container :global(.react-flow__edge.selected) {
+  z-index: 1000 !important;
 }
 
 .container :global(.react-flow__handle) {
@@ -75,8 +79,3 @@
   border-radius: 2px;
 }
 
-.legendDivider {
-  width: 1px;
-  background: var(--border);
-  align-self: stretch;
-}

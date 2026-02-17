@@ -74,6 +74,11 @@ func (p *KubernetesParser) ParseFlux(ctx context.Context) []model.FluxKustomizat
 	return p.parseFluxKustomizations(ctx)
 }
 
+// ParseServiceEntries returns ServiceEntry data for this cluster.
+func (p *KubernetesParser) ParseServiceEntries(ctx context.Context) []model.ServiceEntryInfo {
+	return p.parseServiceEntries(ctx)
+}
+
 // ParseAll queries all supported resources and returns cluster data.
 func (p *KubernetesParser) ParseAll(ctx context.Context) *model.ClusterData {
 	data := &model.ClusterData{}
@@ -444,6 +449,7 @@ func (p *KubernetesParser) parseServiceEntries(ctx context.Context) []model.Serv
 		result = append(result, model.ServiceEntryInfo{
 			Name:            item.GetName(),
 			Namespace:       item.GetNamespace(),
+			Cluster:         p.clusterName,
 			Hosts:           hosts,
 			Location:        location,
 			EndpointAddress: endpointAddr,

@@ -18,22 +18,3 @@
 .clusterNAS {
   border-left: 3px solid #14b8a6;
 }
-
-.badge {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  font-size: 0.6rem;
-  padding: 1px 5px;
-  border-radius: 8px;
-  color: #fff;
-  font-weight: 600;
-}
-
-.badgeHomelab {
-  background: #6366f1;
-}
-
-.badgeNAS {
-  background: #14b8a6;
-}

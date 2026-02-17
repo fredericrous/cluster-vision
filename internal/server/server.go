@@ -132,6 +132,8 @@ func (s *Server) refresh(ctx context.Context) {
 		clusterData.HelmRepositories = append(clusterData.HelmRepositories, repo...)
 
 		clusterData.Flux = append(clusterData.Flux, p.ParseFlux(ctx)...)
+
+		clusterData.ServiceEntries = append(clusterData.ServiceEntries, p.ParseServiceEntries(ctx)...)
 	}
 
 	// Sort namespaces and security policies deterministically

@@ -23,6 +23,7 @@ interface FlowEdgeRaw {
   id: string;
   source: string;
   target: string;
+  crossCluster?: boolean;
 }
 
 interface FlowDataRaw {
@@ -30,10 +31,10 @@ interface FlowDataRaw {
   edges: FlowEdgeRaw[];
 }
 
-const NODE_W = 150;
-const NODE_H = 40;
+const NODE_W = 160;
+const NODE_H = 44;
 const GAP_X = 30;
-const GAP_Y = 16;
+const GAP_Y = 20;
 const PAD_X = 20;
 const PAD_TOP = 32;
 const PAD_BOTTOM = 16;
@@ -74,10 +75,6 @@ function assignLayerColors(layers: string[]): Record<string, string> {
   return map;
 }
 
-const clusterColors: Record<string, string> = {
-  Homelab: "#6366f1",
-  NAS: "#14b8a6",
-};
 
 // Compute topological depth: 0 = no deps, N = longest chain of deps.
 function computeDepths(
@@ -175,7 +172,6 @@ function layoutCluster(
   clusterNodes: FlowNodeRaw[],
   clusterEdges: FlowEdgeRaw[],
   layerColorMap: Record<string, string>,
-  showClusterBadge: boolean,
   startY: number,
 ): { nodes: Node[]; height: number } {
   const depths = computeDepths(clusterNodes, clusterEdges);
@@ -239,7 +235,6 @@ function layoutCluster(
           cluster: n.cluster,
           layer: n.layer,
           layerColor: layerColorMap[n.layer] || LAYER_PALETTE[LAYER_PALETTE.length - 1],
-          showClusterBadge,
         } satisfies FlowNodeData,
       });
     }
@@ -253,11 +248,10 @@ function layoutCluster(
 function buildLayout(
   rawNodes: FlowNodeRaw[],
   rawEdges: FlowEdgeRaw[]
-): { nodes: Node[]; edges: Edge[]; clusters: string[]; layerColorMap: Record<string, string> } {
+): { nodes: Node[]; edges: Edge[]; layerColorMap: Record<string, string> } {
   const clusters = [...new Set(rawNodes.map((n) => n.cluster))].sort(
     (a, b) => (CLUSTER_ORDER[a] ?? 99) - (CLUSTER_ORDER[b] ?? 99)
   );
-  const showClusterBadge = clusters.length > 1;
   const layers = [...new Set(rawNodes.map((n) => n.layer))];
   const layerColorMap = assignLayerColors(layers);
 
@@ -272,6 +266,8 @@ function buildLayout(
 
   const edgesByCluster = new Map<string, FlowEdgeRaw[]>();
   for (const e of rawEdges) {
+    // Cross-cluster edges span clusters; exclude from per-cluster layout
+    if (e.crossCluster) continue;
     const cluster = nodeIdSet.get(e.source) || nodeIdSet.get(e.target);
     if (cluster) {
       if (!edgesByCluster.has(cluster)) edgesByCluster.set(cluster, []);
@@ -289,7 +285,7 @@ function buildLayout(
     if (cNodes.length === 0) continue;
 
     const result = layoutCluster(
-      cluster, cNodes, cEdges, layerColorMap, showClusterBadge, currentY
+      cluster, cNodes, cEdges, layerColorMap, currentY
     );
     allNodes.push(...result.nodes);
     currentY += result.height + CLUSTER_GAP;
@@ -300,18 +296,22 @@ function buildLayout(
     source: e.source,
     target: e.target,
     type: "smoothstep",
+    ...(e.crossCluster
+      ? {
+          animated: true,
+          style: { strokeDasharray: "8 4", stroke: "#f59e0b", strokeWidth: 2 },
+        }
+      : {}),
   }));
 
-  return { nodes: allNodes, edges, clusters, layerColorMap };
+  return { nodes: allNodes, edges, layerColorMap };
 }
 
 export function FlowDiagram({ content }: { content: string }) {
-  const { nodes, edges, clusters, layerColorMap } = useMemo(() => {
+  const { nodes, edges, layerColorMap } = useMemo(() => {
     const raw: FlowDataRaw = JSON.parse(content);
     return buildLayout(raw.nodes, raw.edges);
   }, [content]);
-
-  const showClusterLegend = clusters.length > 1;
 
   return (
     <div className={styles.container}>
@@ -349,20 +349,6 @@ export function FlowDiagram({ content }: { content: string }) {
             {layer}
           </span>
         ))}
-        {showClusterLegend && (
-          <>
-            <span className={styles.legendDivider} />
-            {clusters.map((cluster) => (
-              <span key={cluster} className={styles.legendItem}>
-                <span
-                  className={styles.legendSwatch}
-                  style={{ background: clusterColors[cluster] || "#64748b" }}
-                />
-                {cluster}
-              </span>
-            ))}
-          </>
-        )}
       </div>
     </div>
   );
