@@ -36,12 +36,8 @@
 }
 
 .container :global(.react-flow__edge.selected .react-flow__edge-path) {
-  stroke: #ff6b00;
-  stroke-width: 3;
-}
-
-.container :global(.react-flow__edge.selected) {
-  z-index: 1000 !important;
+  stroke: #ff8c00;
+  stroke-width: 3.5;
 }
 
 .container :global(.react-flow__handle) {

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -343,10 +343,29 @@ function buildLayout(
 }
 
 export function FlowDiagram({ content }: { content: string }) {
-  const { nodes, edges, layerColorMap } = useMemo(() => {
+  const { nodes, edges: baseEdges, layerColorMap } = useMemo(() => {
     const raw: FlowDataRaw = JSON.parse(content);
     return buildLayout(raw.nodes, raw.edges);
   }, [content]);
+
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+
+  const edges = useMemo(
+    () =>
+      baseEdges.map((e) => ({
+        ...e,
+        zIndex: e.id === selectedEdgeId ? 1000 : 0,
+      })),
+    [baseEdges, selectedEdgeId]
+  );
+
+  const onEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => {
+    setSelectedEdgeId((prev) => (prev === edge.id ? null : edge.id));
+  }, []);
+
+  const onPaneClick = useCallback(() => {
+    setSelectedEdgeId(null);
+  }, []);
 
   return (
     <div className={styles.container}>
@@ -360,6 +379,8 @@ export function FlowDiagram({ content }: { content: string }) {
         deleteKeyCode={null}
         minZoom={0.1}
         maxZoom={2}
+        onEdgeClick={onEdgeClick}
+        onPaneClick={onPaneClick}
       >
         <Background gap={20} size={1} />
         <Controls showInteractive={false} />
