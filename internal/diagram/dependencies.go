@@ -4,9 +4,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/fredericrous/cluster-vision/internal/model"
 )
+
+// extractLayer returns the real Flux layer directory name from a kustomization path.
+// Path format: ./kubernetes/<cluster>/<layer>/... → returns "<layer>".
+func extractLayer(path string) string {
+	path = strings.TrimPrefix(path, "./")
+	parts := strings.Split(path, "/")
+	// kubernetes/<cluster>/<layer>
+	if len(parts) >= 3 {
+		return parts[2]
+	}
+	if len(parts) >= 1 && parts[0] != "" {
+		return parts[0]
+	}
+	return "unknown"
+}
 
 // FlowNode represents a node in the interactive flow diagram.
 type FlowNode struct {
@@ -113,23 +129,15 @@ func GenerateDependencies(data *model.ClusterData) model.DiagramResult {
 	// Transitive reduction
 	reduced := transitiveReduce(depGraph)
 
-	// Build nodes with layer classification
+	// Build nodes with real layer from path
 	var nodes []FlowNode
 	for _, k := range data.Flux {
 		id := k.Cluster + "/" + k.Name
-		layer := inferLayer(k.Path)
-		if layer == "" {
-			if len(k.DependsOn) == 0 {
-				layer = "Foundation"
-			} else {
-				layer = "Uncategorized"
-			}
-		}
 		nodes = append(nodes, FlowNode{
 			ID:      id,
 			Label:   k.Name,
 			Cluster: k.Cluster,
-			Layer:   layer,
+			Layer:   extractLayer(k.Path),
 		})
 	}
 

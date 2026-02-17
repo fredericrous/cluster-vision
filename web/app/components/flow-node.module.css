@@ -4,37 +4,10 @@
   font-size: 0.8rem;
   font-weight: 500;
   color: #e2e8f0;
-  background: rgba(30, 41, 59, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.12);
   min-width: 100px;
   text-align: center;
   position: relative;
-}
-
-/* Layer colors */
-.foundation {
-  background: rgba(59, 130, 246, 0.2);
-  border-color: rgba(59, 130, 246, 0.4);
-}
-
-.platform {
-  background: rgba(139, 92, 246, 0.2);
-  border-color: rgba(139, 92, 246, 0.4);
-}
-
-.middleware {
-  background: rgba(245, 158, 11, 0.2);
-  border-color: rgba(245, 158, 11, 0.4);
-}
-
-.apps {
-  background: rgba(34, 197, 94, 0.2);
-  border-color: rgba(34, 197, 94, 0.4);
-}
-
-.uncategorized {
-  background: rgba(100, 116, 139, 0.2);
-  border-color: rgba(100, 116, 139, 0.4);
 }
 
 /* Cluster left border accent */

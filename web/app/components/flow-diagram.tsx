@@ -16,7 +16,7 @@ interface FlowNodeRaw {
   id: string;
   label: string;
   cluster: string;
-  layer: string; // unused — depth is computed from edges
+  layer: string; // real Flux layer directory name (e.g. crds, controllers, apps)
 }
 
 interface FlowEdgeRaw {
@@ -38,17 +38,41 @@ const PAD_X = 20;
 const PAD_TOP = 32;
 const PAD_BOTTOM = 16;
 const LAYER_GAP = 40;
+const CLUSTER_GAP = 60;
 const MAX_COLS = 8;
+
+// Cluster display order: NAS is deployed before Homelab.
+const CLUSTER_ORDER: Record<string, number> = { NAS: 0, Homelab: 1 };
 
 const nodeTypes = { flow: FlowNode, layerGroup: LayerGroup };
 
-const layerColors: Record<string, string> = {
-  Foundation: "rgba(59, 130, 246, 0.5)",
-  Platform: "rgba(139, 92, 246, 0.5)",
-  Middleware: "rgba(245, 158, 11, 0.5)",
-  Apps: "rgba(34, 197, 94, 0.5)",
-  Uncategorized: "rgba(100, 116, 139, 0.5)",
-};
+// Dynamic color palette for arbitrary layer names.
+// Colors are assigned in discovery order; this palette has enough entries
+// for the typical Flux layer count (crds, controllers, platform-foundation,
+// security, monitoring, apps, etc.).
+const LAYER_PALETTE = [
+  "#3b82f6", // blue
+  "#8b5cf6", // violet
+  "#f59e0b", // amber
+  "#22c55e", // green
+  "#ef4444", // red
+  "#06b6d4", // cyan
+  "#ec4899", // pink
+  "#f97316", // orange
+  "#a855f7", // purple
+  "#14b8a6", // teal
+  "#eab308", // yellow
+  "#64748b", // slate (fallback)
+];
+
+function assignLayerColors(layers: string[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  const sorted = [...layers].sort();
+  for (let i = 0; i < sorted.length; i++) {
+    map[sorted[i]] = LAYER_PALETTE[i % LAYER_PALETTE.length];
+  }
+  return map;
+}
 
 const clusterColors: Record<string, string> = {
   Homelab: "#6366f1",
@@ -144,30 +168,29 @@ function minimizeCrossings(
   }
 }
 
-function buildLayout(
-  rawNodes: FlowNodeRaw[],
-  rawEdges: FlowEdgeRaw[]
-): { nodes: Node[]; edges: Edge[]; clusters: string[] } {
-  const clusters = [...new Set(rawNodes.map((n) => n.cluster))];
-  const showClusterBadge = clusters.length > 1;
+// Layout a single cluster's nodes into rank groups.
+// Returns the generated xyflow nodes and the total height consumed.
+function layoutCluster(
+  clusterName: string,
+  clusterNodes: FlowNodeRaw[],
+  clusterEdges: FlowEdgeRaw[],
+  layerColorMap: Record<string, string>,
+  showClusterBadge: boolean,
+  startY: number,
+): { nodes: Node[]; height: number } {
+  const depths = computeDepths(clusterNodes, clusterEdges);
 
-  // Compute real deployment depth from dependency graph
-  const depths = computeDepths(rawNodes, rawEdges);
-
-  // Group by depth
   const byRank = new Map<number, FlowNodeRaw[]>();
-  for (const n of rawNodes) {
+  for (const n of clusterNodes) {
     const d = depths.get(n.id) ?? 0;
     if (!byRank.has(d)) byRank.set(d, []);
     byRank.get(d)!.push(n);
   }
 
-  // Order within ranks to minimize crossings
-  minimizeCrossings(byRank, rawEdges);
+  minimizeCrossings(byRank, clusterEdges);
 
   const ranks = [...byRank.keys()].sort((a, b) => a - b);
 
-  // Uniform width across all ranks
   let maxCols = 0;
   for (const rank of ranks) {
     maxCols = Math.max(maxCols, Math.min(byRank.get(rank)!.length, MAX_COLS));
@@ -175,7 +198,7 @@ function buildLayout(
   const uniformW = maxCols * (NODE_W + GAP_X) - GAP_X + 2 * PAD_X;
 
   const allNodes: Node[] = [];
-  let currentY = 0;
+  let currentY = startY;
 
   for (const rank of ranks) {
     const rankNodes = byRank.get(rank)!;
@@ -187,13 +210,13 @@ function buildLayout(
     const contentW = cols * (NODE_W + GAP_X) - GAP_X;
     const offsetX = PAD_X + (groupW - 2 * PAD_X - contentW) / 2;
 
-    const groupId = `rank-${rank}`;
+    const groupId = `${clusterName}-rank-${rank}`;
     allNodes.push({
       id: groupId,
       type: "layerGroup",
       position: { x: 0, y: currentY },
       style: { width: groupW, height: groupH },
-      data: { label: `Rank ${rank}` },
+      data: { label: `${clusterName} — Rank ${rank}` },
       draggable: true,
       selectable: false,
     });
@@ -215,12 +238,61 @@ function buildLayout(
           label: n.label,
           cluster: n.cluster,
           layer: n.layer,
+          layerColor: layerColorMap[n.layer] || LAYER_PALETTE[LAYER_PALETTE.length - 1],
           showClusterBadge,
         } satisfies FlowNodeData,
       });
     }
 
     currentY += groupH + LAYER_GAP;
+  }
+
+  return { nodes: allNodes, height: currentY - startY };
+}
+
+function buildLayout(
+  rawNodes: FlowNodeRaw[],
+  rawEdges: FlowEdgeRaw[]
+): { nodes: Node[]; edges: Edge[]; clusters: string[]; layerColorMap: Record<string, string> } {
+  const clusters = [...new Set(rawNodes.map((n) => n.cluster))].sort(
+    (a, b) => (CLUSTER_ORDER[a] ?? 99) - (CLUSTER_ORDER[b] ?? 99)
+  );
+  const showClusterBadge = clusters.length > 1;
+  const layers = [...new Set(rawNodes.map((n) => n.layer))];
+  const layerColorMap = assignLayerColors(layers);
+
+  // Split nodes and edges per cluster
+  const nodesByCluster = new Map<string, FlowNodeRaw[]>();
+  const nodeIdSet = new Map<string, string>(); // nodeId → cluster
+  for (const n of rawNodes) {
+    if (!nodesByCluster.has(n.cluster)) nodesByCluster.set(n.cluster, []);
+    nodesByCluster.get(n.cluster)!.push(n);
+    nodeIdSet.set(n.id, n.cluster);
+  }
+
+  const edgesByCluster = new Map<string, FlowEdgeRaw[]>();
+  for (const e of rawEdges) {
+    const cluster = nodeIdSet.get(e.source) || nodeIdSet.get(e.target);
+    if (cluster) {
+      if (!edgesByCluster.has(cluster)) edgesByCluster.set(cluster, []);
+      edgesByCluster.get(cluster)!.push(e);
+    }
+  }
+
+  // Layout each cluster independently, stacked vertically
+  const allNodes: Node[] = [];
+  let currentY = 0;
+
+  for (const cluster of clusters) {
+    const cNodes = nodesByCluster.get(cluster) || [];
+    const cEdges = edgesByCluster.get(cluster) || [];
+    if (cNodes.length === 0) continue;
+
+    const result = layoutCluster(
+      cluster, cNodes, cEdges, layerColorMap, showClusterBadge, currentY
+    );
+    allNodes.push(...result.nodes);
+    currentY += result.height + CLUSTER_GAP;
   }
 
   const edges: Edge[] = rawEdges.map((e) => ({
@@ -230,11 +302,11 @@ function buildLayout(
     type: "smoothstep",
   }));
 
-  return { nodes: allNodes, edges, clusters };
+  return { nodes: allNodes, edges, clusters, layerColorMap };
 }
 
 export function FlowDiagram({ content }: { content: string }) {
-  const { nodes, edges, clusters } = useMemo(() => {
+  const { nodes, edges, clusters, layerColorMap } = useMemo(() => {
     const raw: FlowDataRaw = JSON.parse(content);
     return buildLayout(raw.nodes, raw.edges);
   }, [content]);
@@ -260,7 +332,7 @@ export function FlowDiagram({ content }: { content: string }) {
           nodeColor={(n) => {
             if (n.type === "layerGroup") return "rgba(100, 116, 139, 0.15)";
             const layer = (n.data as Record<string, unknown>).layer as string;
-            return layerColors[layer] || layerColors.Uncategorized;
+            return layerColorMap[layer] || "#64748b";
           }}
           maskColor="rgba(0, 0, 0, 0.7)"
           pannable
@@ -268,7 +340,7 @@ export function FlowDiagram({ content }: { content: string }) {
         />
       </ReactFlow>
       <div className={styles.legend}>
-        {Object.entries(layerColors).map(([layer, color]) => (
+        {Object.entries(layerColorMap).map(([layer, color]) => (
           <span key={layer} className={styles.legendItem}>
             <span
               className={styles.legendSwatch}
