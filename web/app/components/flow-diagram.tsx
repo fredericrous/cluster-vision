@@ -352,10 +352,17 @@ export function FlowDiagram({ content }: { content: string }) {
 
   const edges = useMemo(
     () =>
-      baseEdges.map((e) => ({
-        ...e,
-        zIndex: e.id === selectedEdgeId ? 1000 : 0,
-      })),
+      baseEdges.map((e) => {
+        const isSelected = e.id === selectedEdgeId;
+        return {
+          ...e,
+          zIndex: isSelected ? 1000 : 0,
+          selected: isSelected,
+          style: isSelected
+            ? { ...e.style, stroke: "#ff8c00", strokeWidth: 3.5 }
+            : e.style,
+        };
+      }),
     [baseEdges, selectedEdgeId]
   );
 
