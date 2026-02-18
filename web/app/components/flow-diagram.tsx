@@ -8,6 +8,7 @@ import {
   type Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { SmartStepEdge } from "@jalez/react-flow-smart-edge";
 import { FlowNode, type FlowNodeData } from "./flow-node";
 import { LayerGroup } from "./flow-group";
 import styles from "./flow-diagram.module.css";
@@ -31,7 +32,6 @@ interface FlowDataRaw {
   edges: FlowEdgeRaw[];
 }
 
-const NODE_W = 160;
 const NODE_H = 44;
 const GAP_X = 30;
 const GAP_Y = 20;
@@ -41,11 +41,30 @@ const PAD_BOTTOM = 16;
 const LAYER_GAP = 40;
 const CLUSTER_GAP = 60;
 const MAX_COLS = 8;
+const MIN_NODE_W = 120;
+const MAX_NODE_W = 300;
+// Horizontal padding (14px * 2) + border (1px * 2) + cluster accent (3px)
+const NODE_PAD = 33;
 
 // Cluster display order: NAS is deployed before Homelab.
 const CLUSTER_ORDER: Record<string, number> = { NAS: 0, Homelab: 1 };
 
 const nodeTypes = { flow: FlowNode, layerGroup: LayerGroup };
+const edgeTypes = { smartStep: SmartStepEdge };
+
+/** Measure the widest label and return a uniform node width. */
+function computeNodeWidth(labels: string[]): number {
+  if (typeof document === "undefined") return 160; // SSR fallback
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return 160;
+  ctx.font = "500 0.8rem Inter, sans-serif";
+  let maxW = 0;
+  for (const label of labels) {
+    maxW = Math.max(maxW, ctx.measureText(label).width);
+  }
+  return Math.min(MAX_NODE_W, Math.max(MIN_NODE_W, Math.ceil(maxW) + NODE_PAD));
+}
 
 // Dynamic color palette for arbitrary layer names.
 // Colors are assigned in discovery order; this palette has enough entries
@@ -169,6 +188,8 @@ function buildLayout(
   rawNodes: FlowNodeRaw[],
   rawEdges: FlowEdgeRaw[]
 ): { nodes: Node[]; edges: Edge[]; layerColorMap: Record<string, string> } {
+  const nodeW = computeNodeWidth(rawNodes.map((n) => n.label));
+
   const clusters = [...new Set(rawNodes.map((n) => n.cluster))].sort(
     (a, b) => (CLUSTER_ORDER[a] ?? 99) - (CLUSTER_ORDER[b] ?? 99)
   );
@@ -225,7 +246,7 @@ function buildLayout(
       maxRank = Math.max(maxRank, rank);
       const cols = Math.min(nodes.length, MAX_COLS);
       const rows = Math.ceil(nodes.length / cols);
-      const naturalW = cols * (NODE_W + GAP_X) - GAP_X + 2 * PAD_X;
+      const naturalW = cols * (nodeW + GAP_X) - GAP_X + 2 * PAD_X;
       const naturalH = PAD_TOP + rows * (NODE_H + GAP_Y) - GAP_Y + PAD_BOTTOM;
       rankInfos.set(rank, { nodes, cols, rows, naturalW, naturalH });
     }
@@ -297,7 +318,7 @@ function buildLayout(
       });
 
       // Center the grid of child nodes within the (possibly larger) group
-      const gridW = info.cols * (NODE_W + GAP_X) - GAP_X;
+      const gridW = info.cols * (nodeW + GAP_X) - GAP_X;
       const gridH = info.rows * (NODE_H + GAP_Y) - GAP_Y;
       const offsetX = PAD_X + (cW - 2 * PAD_X - gridW) / 2;
       const offsetY = PAD_TOP + (rH - PAD_TOP - PAD_BOTTOM - gridH) / 2;
@@ -310,9 +331,11 @@ function buildLayout(
           id: n.id,
           type: "flow",
           position: {
-            x: offsetX + col * (NODE_W + GAP_X),
+            x: offsetX + col * (nodeW + GAP_X),
             y: offsetY + row * (NODE_H + GAP_Y),
           },
+          width: nodeW,
+          height: NODE_H,
           parentId: groupId,
           extent: "parent" as const,
           data: {
@@ -320,6 +343,7 @@ function buildLayout(
             cluster: n.cluster,
             layer: n.layer,
             layerColor: layerColorMap[n.layer] || LAYER_PALETTE[LAYER_PALETTE.length - 1],
+            width: nodeW,
           } satisfies FlowNodeData,
         });
       }
@@ -330,7 +354,7 @@ function buildLayout(
     id: e.id,
     source: e.source,
     target: e.target,
-    type: "smoothstep",
+    type: "smartStep",
     ...(e.crossCluster
       ? {
           animated: true,
@@ -380,6 +404,7 @@ export function FlowDiagram({ content }: { content: string }) {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         colorMode="dark"
         fitView
         nodesConnectable={false}

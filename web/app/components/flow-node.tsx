@@ -6,6 +6,7 @@ export interface FlowNodeData {
   cluster: string;
   layer: string;
   layerColor: string; // assigned dynamically from palette
+  width: number; // computed from label measurement
 }
 
 const clusterBorderClass: Record<string, string> = {
@@ -23,6 +24,7 @@ export function FlowNode({ data }: NodeProps) {
     <div
       className={classes}
       style={{
+        width: d.width,
         background: `${d.layerColor}33`, // 20% opacity
         borderColor: `${d.layerColor}66`, // 40% opacity
       }}

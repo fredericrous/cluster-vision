@@ -1,5 +1,4 @@
 .node {
-  width: 160px;
   height: 44px;
   box-sizing: border-box;
   padding: 8px 14px;
@@ -12,8 +11,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
