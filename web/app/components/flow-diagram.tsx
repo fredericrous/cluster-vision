@@ -8,6 +8,7 @@ import {
   type Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import dagre from "@dagrejs/dagre";
 import { SmartStepEdge } from "@jalez/react-flow-smart-edge";
 import { FlowNode, type FlowNodeData } from "./flow-node";
 import { LayerGroup } from "./flow-group";
@@ -33,14 +34,10 @@ interface FlowDataRaw {
 }
 
 const NODE_H = 44;
-const GAP_X = 30;
-const GAP_Y = 20;
 const PAD_X = 20;
 const PAD_TOP = 32;
 const PAD_BOTTOM = 16;
-const LAYER_GAP = 40;
 const CLUSTER_GAP = 60;
-const MAX_COLS = 8;
 const MIN_NODE_W = 120;
 const MAX_NODE_W = 300;
 // Horizontal padding (14px * 2) + border (1px * 2) + cluster accent (3px)
@@ -94,96 +91,6 @@ function assignLayerColors(layers: string[]): Record<string, string> {
   return map;
 }
 
-
-// Compute topological depth: 0 = no deps, N = longest chain of deps.
-function computeDepths(
-  nodes: FlowNodeRaw[],
-  edges: FlowEdgeRaw[]
-): Map<string, number> {
-  const deps = new Map<string, Set<string>>();
-  for (const n of nodes) deps.set(n.id, new Set());
-  for (const e of edges) deps.get(e.target)?.add(e.source);
-
-  const depth = new Map<string, number>();
-
-  function resolve(id: string): number {
-    if (depth.has(id)) return depth.get(id)!;
-    const d = deps.get(id);
-    if (!d || d.size === 0) {
-      depth.set(id, 0);
-      return 0;
-    }
-    // Temporarily mark to detect cycles
-    depth.set(id, 0);
-    let max = 0;
-    for (const dep of d) max = Math.max(max, resolve(dep) + 1);
-    depth.set(id, max);
-    return max;
-  }
-
-  for (const n of nodes) resolve(n.id);
-  return depth;
-}
-
-// Barycenter heuristic: order nodes within each rank so edges go
-// as straight down as possible, minimizing crossings.
-function minimizeCrossings(
-  byRank: Map<number, FlowNodeRaw[]>,
-  edges: FlowEdgeRaw[]
-): void {
-  const upNeighbors = new Map<string, string[]>();
-  const downNeighbors = new Map<string, string[]>();
-  for (const e of edges) {
-    if (!upNeighbors.has(e.target)) upNeighbors.set(e.target, []);
-    upNeighbors.get(e.target)!.push(e.source);
-    if (!downNeighbors.has(e.source)) downNeighbors.set(e.source, []);
-    downNeighbors.get(e.source)!.push(e.target);
-  }
-
-  const nodeIndex = new Map<string, number>();
-  const ranks = [...byRank.keys()].sort((a, b) => a - b);
-
-  // Initialize alphabetical
-  for (const rank of ranks) {
-    const nodes = byRank.get(rank)!;
-    nodes.sort((a, b) => a.label.localeCompare(b.label));
-    for (let i = 0; i < nodes.length; i++) nodeIndex.set(nodes[i].id, i);
-  }
-
-  function sortByBarycenter(
-    nodes: FlowNodeRaw[],
-    getNeighbors: (id: string) => string[]
-  ) {
-    const bary = new Map<string, number>();
-    for (const n of nodes) {
-      const nbrs = getNeighbors(n.id);
-      if (nbrs.length === 0) continue;
-      let sum = 0, count = 0;
-      for (const nbr of nbrs) {
-        if (nodeIndex.has(nbr)) { sum += nodeIndex.get(nbr)!; count++; }
-      }
-      if (count > 0) bary.set(n.id, sum / count);
-    }
-    nodes.sort((a, b) => {
-      const ba = bary.get(a.id);
-      const bb = bary.get(b.id);
-      if (ba !== undefined && bb !== undefined) return ba - bb;
-      if (ba !== undefined) return -1;
-      if (bb !== undefined) return 1;
-      return a.label.localeCompare(b.label);
-    });
-    for (let i = 0; i < nodes.length; i++) nodeIndex.set(nodes[i].id, i);
-  }
-
-  // Down pass then up pass
-  for (const rank of ranks) {
-    sortByBarycenter(byRank.get(rank)!, (id) => upNeighbors.get(id) || []);
-  }
-  for (let i = ranks.length - 1; i >= 0; i--) {
-    sortByBarycenter(byRank.get(ranks[i])!, (id) => downNeighbors.get(id) || []);
-  }
-}
-
 function buildLayout(
   rawNodes: FlowNodeRaw[],
   rawEdges: FlowEdgeRaw[]
@@ -215,94 +122,135 @@ function buildLayout(
     }
   }
 
-  // Phase 1: compute ranks per cluster
-  type RankInfo = {
-    nodes: FlowNodeRaw[];
-    cols: number;
-    rows: number;
-    naturalW: number; // width this rank needs (with padding)
-    naturalH: number; // height this rank needs (with padding)
-  };
-
-  const clusterRanks = new Map<string, Map<number, RankInfo>>();
-  let maxRank = 0;
+  // Run Dagre layout per cluster, collect positioned nodes grouped by rank
+  type PositionedNode = { raw: FlowNodeRaw; x: number; y: number; rank: number };
+  const clusterResults = new Map<string, PositionedNode[]>();
 
   for (const cluster of clusters) {
     const cNodes = nodesByCluster.get(cluster) || [];
     const cEdges = edgesByCluster.get(cluster) || [];
     if (cNodes.length === 0) continue;
 
-    const depths = computeDepths(cNodes, cEdges);
-    const byRank = new Map<number, FlowNodeRaw[]>();
-    for (const n of cNodes) {
-      const d = depths.get(n.id) ?? 0;
-      if (!byRank.has(d)) byRank.set(d, []);
-      byRank.get(d)!.push(n);
-    }
-    minimizeCrossings(byRank, cEdges);
+    const g = new dagre.graphlib.Graph();
+    g.setGraph({
+      rankdir: "TB",
+      nodesep: 60,
+      ranksep: 80,
+      marginx: 0,
+      marginy: 0,
+      ranker: "network-simplex",
+    });
+    g.setDefaultEdgeLabel(() => ({}));
 
-    const rankInfos = new Map<number, RankInfo>();
-    for (const [rank, nodes] of byRank) {
-      maxRank = Math.max(maxRank, rank);
-      const cols = Math.min(nodes.length, MAX_COLS);
-      const rows = Math.ceil(nodes.length / cols);
-      const naturalW = cols * (nodeW + GAP_X) - GAP_X + 2 * PAD_X;
-      const naturalH = PAD_TOP + rows * (NODE_H + GAP_Y) - GAP_Y + PAD_BOTTOM;
-      rankInfos.set(rank, { nodes, cols, rows, naturalW, naturalH });
+    for (const n of cNodes) {
+      g.setNode(n.id, { width: nodeW, height: NODE_H });
     }
-    clusterRanks.set(cluster, rankInfos);
+    for (const e of cEdges) {
+      g.setEdge(e.source, e.target);
+    }
+
+    dagre.layout(g);
+
+    const positioned: PositionedNode[] = [];
+    for (const n of cNodes) {
+      const pos = g.node(n.id);
+      positioned.push({
+        raw: n,
+        // Dagre returns center coords; convert to top-left
+        x: pos.x - nodeW / 2,
+        y: pos.y - NODE_H / 2,
+        rank: pos.rank ?? 0,
+      });
+    }
+    clusterResults.set(cluster, positioned);
   }
 
-  // Phase 2: uniform dimensions across clusters
-  // clusterWidth = max naturalW across all ranks in that cluster
+  // Compute uniform rank heights across clusters (so ranks align horizontally)
+  const allRanks = new Set<number>();
+  for (const positioned of clusterResults.values()) {
+    for (const p of positioned) allRanks.add(p.rank);
+  }
+  const sortedRanks = [...allRanks].sort((a, b) => a - b);
+
+  // For each rank in each cluster, compute bounding box
+  type RankBBox = { minX: number; maxX: number; minY: number; maxY: number; nodes: PositionedNode[] };
+  const clusterRankBoxes = new Map<string, Map<number, RankBBox>>();
+
+  for (const cluster of clusters) {
+    const positioned = clusterResults.get(cluster);
+    if (!positioned) continue;
+
+    const byRank = new Map<number, PositionedNode[]>();
+    for (const p of positioned) {
+      if (!byRank.has(p.rank)) byRank.set(p.rank, []);
+      byRank.get(p.rank)!.push(p);
+    }
+
+    const boxes = new Map<number, RankBBox>();
+    for (const [rank, nodes] of byRank) {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const n of nodes) {
+        minX = Math.min(minX, n.x);
+        maxX = Math.max(maxX, n.x + nodeW);
+        minY = Math.min(minY, n.y);
+        maxY = Math.max(maxY, n.y + NODE_H);
+      }
+      boxes.set(rank, { minX, maxX, minY, maxY, nodes });
+    }
+    clusterRankBoxes.set(cluster, boxes);
+  }
+
+  // Compute uniform rank heights across all clusters at each rank
+  const rankHeights = new Map<number, number>();
+  for (const rank of sortedRanks) {
+    let maxH = 0;
+    for (const cluster of clusters) {
+      const box = clusterRankBoxes.get(cluster)?.get(rank);
+      if (box) maxH = Math.max(maxH, box.maxY - box.minY + PAD_TOP + PAD_BOTTOM);
+    }
+    rankHeights.set(rank, maxH);
+  }
+
+  // Compute cluster widths (max rank width per cluster)
   const clusterWidths = new Map<string, number>();
   for (const cluster of clusters) {
-    const rankInfos = clusterRanks.get(cluster);
-    if (!rankInfos) continue;
+    const boxes = clusterRankBoxes.get(cluster);
+    if (!boxes) continue;
     let maxW = 0;
-    for (const info of rankInfos.values()) maxW = Math.max(maxW, info.naturalW);
+    for (const box of boxes.values()) {
+      maxW = Math.max(maxW, box.maxX - box.minX + 2 * PAD_X);
+    }
     clusterWidths.set(cluster, maxW);
   }
 
-  // rankHeight = max naturalH across all clusters at that rank
-  const rankHeights = new Map<number, number>();
-  for (let r = 0; r <= maxRank; r++) {
-    let maxH = 0;
-    for (const cluster of clusters) {
-      const info = clusterRanks.get(cluster)?.get(r);
-      if (info) maxH = Math.max(maxH, info.naturalH);
-    }
-    if (maxH > 0) rankHeights.set(r, maxH);
-  }
-
-  // Phase 3: compute offsets (columns for clusters, rows for ranks)
-  const clusterX = new Map<string, number>();
+  // Compute cluster X offsets (side by side)
+  const clusterXMap = new Map<string, number>();
   let xCursor = 0;
   for (const cluster of clusters) {
     const w = clusterWidths.get(cluster);
     if (w === undefined) continue;
-    clusterX.set(cluster, xCursor);
+    clusterXMap.set(cluster, xCursor);
     xCursor += w + CLUSTER_GAP;
   }
 
+  // Compute rank Y offsets (stacked vertically)
   const rankYMap = new Map<number, number>();
   let yCursor = 0;
-  const sortedRanks = [...rankHeights.keys()].sort((a, b) => a - b);
-  for (const r of sortedRanks) {
-    rankYMap.set(r, yCursor);
-    yCursor += rankHeights.get(r)! + LAYER_GAP;
+  for (const rank of sortedRanks) {
+    rankYMap.set(rank, yCursor);
+    yCursor += rankHeights.get(rank)! + 20; // gap between rank groups
   }
 
-  // Phase 4: create group + child nodes
+  // Build ReactFlow nodes: group containers + child nodes
   const allNodes: Node[] = [];
 
   for (const cluster of clusters) {
-    const rankInfos = clusterRanks.get(cluster);
-    if (!rankInfos) continue;
-    const cX = clusterX.get(cluster)!;
+    const boxes = clusterRankBoxes.get(cluster);
+    if (!boxes) continue;
+    const cX = clusterXMap.get(cluster)!;
     const cW = clusterWidths.get(cluster)!;
 
-    for (const [rank, info] of rankInfos) {
+    for (const [rank, box] of boxes) {
       const rY = rankYMap.get(rank)!;
       const rH = rankHeights.get(rank)!;
       const groupId = `${cluster}-rank-${rank}`;
@@ -317,32 +265,29 @@ function buildLayout(
         selectable: false,
       });
 
-      // Center the grid of child nodes within the (possibly larger) group
-      const gridW = info.cols * (nodeW + GAP_X) - GAP_X;
-      const gridH = info.rows * (NODE_H + GAP_Y) - GAP_Y;
-      const offsetX = PAD_X + (cW - 2 * PAD_X - gridW) / 2;
-      const offsetY = PAD_TOP + (rH - PAD_TOP - PAD_BOTTOM - gridH) / 2;
+      // Place child nodes relative to group, centering the Dagre layout within the group
+      const contentW = box.maxX - box.minX;
+      const contentH = box.maxY - box.minY;
+      const offsetX = PAD_X + (cW - 2 * PAD_X - contentW) / 2;
+      const offsetY = PAD_TOP + (rH - PAD_TOP - PAD_BOTTOM - contentH) / 2;
 
-      for (let i = 0; i < info.nodes.length; i++) {
-        const n = info.nodes[i];
-        const col = i % info.cols;
-        const row = Math.floor(i / info.cols);
+      for (const p of box.nodes) {
         allNodes.push({
-          id: n.id,
+          id: p.raw.id,
           type: "flow",
           position: {
-            x: offsetX + col * (nodeW + GAP_X),
-            y: offsetY + row * (NODE_H + GAP_Y),
+            x: offsetX + (p.x - box.minX),
+            y: offsetY + (p.y - box.minY),
           },
           width: nodeW,
           height: NODE_H,
           parentId: groupId,
           extent: "parent" as const,
           data: {
-            label: n.label,
-            cluster: n.cluster,
-            layer: n.layer,
-            layerColor: layerColorMap[n.layer] || LAYER_PALETTE[LAYER_PALETTE.length - 1],
+            label: p.raw.label,
+            cluster: p.raw.cluster,
+            layer: p.raw.layer,
+            layerColor: layerColorMap[p.raw.layer] || LAYER_PALETTE[LAYER_PALETTE.length - 1],
             width: nodeW,
           } satisfies FlowNodeData,
         });
