@@ -8,7 +8,8 @@ const navItems = [
   { value: "/dependencies", label: "Dependencies" },
   { value: "/network", label: "Network" },
   { value: "/security", label: "Security" },
-  { value: "/versions", label: "Versions" },
+  { value: "/charts", label: "Helm Charts" },
+  { value: "/images", label: "Images" },
 ];
 
 export default function AppLayout() {

@@ -29,12 +29,13 @@ type Config struct {
 
 // Server serves the diagram API.
 type Server struct {
-	cfg        Config
-	k8sParsers []*parser.KubernetesParser
-	checker    *versions.Checker
-	mu         sync.RWMutex
-	data       []model.DiagramResult
-	lastGen    time.Time
+	cfg          Config
+	k8sParsers   []*parser.KubernetesParser
+	checker      *versions.Checker
+	imageChecker *versions.ImageChecker
+	mu           sync.RWMutex
+	data         []model.DiagramResult
+	lastGen      time.Time
 }
 
 // New creates a new Server.
@@ -68,8 +69,9 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	checker := versions.NewChecker(cfg.RefreshInterval, cfg.RegistryProxy)
+	imageChecker := versions.NewImageChecker()
 
-	return &Server{cfg: cfg, k8sParsers: parsers, checker: checker}, nil
+	return &Server{cfg: cfg, k8sParsers: parsers, checker: checker, imageChecker: imageChecker}, nil
 }
 
 // Start begins serving HTTP and starts the background refresh loop.
@@ -174,7 +176,7 @@ func (s *Server) refresh(ctx context.Context) {
 		diagram.GenerateNetwork(clusterData),
 	)
 	diagrams = append(diagrams, diagram.GenerateSecurity(clusterData)...)
-	diagrams = append(diagrams, diagram.GenerateImages(clusterData))
+	diagrams = append(diagrams, diagram.GenerateImages(clusterData, s.imageChecker))
 	diagrams = append(diagrams, diagram.GenerateVersions(clusterData, s.checker))
 
 	s.mu.Lock()
@@ -192,8 +194,23 @@ func (s *Server) refresh(ctx context.Context) {
 		versionsResult := diagram.GenerateVersions(clusterData, s.checker)
 		s.mu.Lock()
 		for i, d := range s.data {
-			if d.ID == "versions" {
+			if d.ID == "charts" {
 				s.data[i] = versionsResult
+				break
+			}
+		}
+		s.mu.Unlock()
+	}()
+
+	// Check latest image tags asynchronously
+	go func() {
+		s.imageChecker.Check(clusterData.Pods)
+
+		imagesResult := diagram.GenerateImages(clusterData, s.imageChecker)
+		s.mu.Lock()
+		for i, d := range s.data {
+			if d.ID == "images" {
+				s.data[i] = imagesResult
 				break
 			}
 		}

@@ -2,8 +2,9 @@ import { useMemo } from "react";
 import type { Route } from "./+types/images";
 import { fetchDiagram } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
-import { DataTable } from "../components/data-table";
+import { DataTable, OutdatedBadge } from "../components/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
+import tableStyles from "../components/data-table.module.css";
 
 interface ImageRow {
   image: string;
@@ -12,6 +13,8 @@ interface ImageRow {
   namespaces: string;
   pods: number;
   registry: string;
+  latest: string;
+  outdated: boolean;
 }
 
 export function meta({}: Route.MetaArgs) {
@@ -25,9 +28,19 @@ export async function loader() {
 const columns: ColumnDef<ImageRow, string>[] = [
   { accessorKey: "image", header: "Image" },
   { accessorKey: "tag", header: "Tag" },
+  {
+    accessorKey: "latest",
+    header: "Latest",
+    cell: ({ row }) => (
+      <OutdatedBadge
+        value={row.original.latest}
+        outdated={row.original.outdated}
+      />
+    ),
+  },
   { accessorKey: "type", header: "Type" },
   { accessorKey: "registry", header: "Registry" },
-  { accessorKey: "namespaces", header: "Namespaces" },
+  { accessorKey: "namespaces", header: "Namespaces", meta: { className: tableStyles.wideCell } },
   { accessorKey: "pods", header: "Pods" },
 ];
 

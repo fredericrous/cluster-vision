@@ -11,6 +11,12 @@ import {
 } from "@tanstack/react-table";
 import styles from "./data-table.module.css";
 
+declare module "@tanstack/react-table" {
+  interface ColumnMeta<TData extends unknown, TValue> {
+    className?: string;
+  }
+}
+
 interface DataTableProps<T> {
   data: T[];
   columns: ColumnDef<T, string>[];
@@ -95,6 +101,7 @@ export function DataTable<T>({
               {headerGroup.headers.map((header) => (
                 <th
                   key={header.id}
+                  className={header.column.columnDef.meta?.className}
                   onClick={header.column.getToggleSortingHandler()}
                 >
                   {flexRender(
@@ -115,7 +122,7 @@ export function DataTable<T>({
           {table.getRowModel().rows.map((row) => (
             <tr key={row.id}>
               {row.getVisibleCells().map((cell) => (
-                <td key={cell.id}>
+                <td key={cell.id} className={cell.column.columnDef.meta?.className}>
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}
                 </td>
               ))}

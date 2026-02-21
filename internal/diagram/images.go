@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/fredericrous/cluster-vision/internal/model"
+	"github.com/fredericrous/cluster-vision/internal/versions"
 )
 
 // ImageRow represents a single row in the container images table.
@@ -16,6 +17,8 @@ type ImageRow struct {
 	Namespaces string `json:"namespaces"` // comma-separated unique namespaces
 	Pods       int    `json:"pods"`       // count of pods using this image:tag
 	Registry   string `json:"registry"`   // extracted registry hostname
+	Latest     string `json:"latest"`     // latest tag with same variant pattern
+	Outdated   bool   `json:"outdated"`   // true if latest != current tag
 }
 
 // imageKey uniquely identifies an image ref + container type.
@@ -32,7 +35,7 @@ type imageAgg struct {
 }
 
 // GenerateImages produces a table of container images running across the cluster.
-func GenerateImages(data *model.ClusterData) model.DiagramResult {
+func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) model.DiagramResult {
 	if len(data.Pods) == 0 {
 		return model.DiagramResult{
 			ID:      "images",
@@ -72,6 +75,17 @@ func GenerateImages(data *model.ClusterData) model.DiagramResult {
 			typ = "init"
 		}
 
+		latest := "-"
+		outdated := false
+		if checker != nil {
+			if v := checker.GetLatest(key.image, key.tag); v != "" {
+				latest = v
+				if latest != "-" && latest != key.tag {
+					outdated = true
+				}
+			}
+		}
+
 		rows = append(rows, ImageRow{
 			Image:      key.image,
 			Tag:        key.tag,
@@ -79,6 +93,8 @@ func GenerateImages(data *model.ClusterData) model.DiagramResult {
 			Namespaces: strings.Join(ns, ", "),
 			Pods:       len(a.pods),
 			Registry:   a.registry,
+			Latest:     latest,
+			Outdated:   outdated,
 		})
 	}
 

@@ -25,8 +25,8 @@ type VersionRow struct {
 func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.DiagramResult {
 	if len(data.HelmReleases) == 0 {
 		return model.DiagramResult{
-			ID:      "versions",
-			Title:   "Component Versions",
+			ID:      "charts",
+			Title:   "Helm Charts",
 			Type:    "markdown",
 			Content: "*No HelmRelease data available.*",
 		}
@@ -101,8 +101,8 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 	tableJSON, _ := json.Marshal(rows)
 
 	return model.DiagramResult{
-		ID:      "versions",
-		Title:   "Component Versions",
+		ID:      "charts",
+		Title:   "Helm Charts",
 		Type:    "table",
 		Content: string(tableJSON),
 	}

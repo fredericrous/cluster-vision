@@ -49,10 +49,10 @@ const cards = [
     to: "/security",
   },
   {
-    id: "versions",
-    title: "Component Versions",
+    id: "charts",
+    title: "Helm Charts",
     description: "Helm chart versions and update status",
-    to: "/versions",
+    to: "/charts",
   },
   {
     id: "images",

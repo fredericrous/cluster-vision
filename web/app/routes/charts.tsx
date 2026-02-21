@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { Route } from "./+types/versions";
+import type { Route } from "./+types/charts";
 import { fetchDiagram } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
 import { DataTable, OutdatedBadge } from "../components/data-table";
@@ -18,11 +18,11 @@ interface VersionRow {
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Versions — Cluster Vision" }];
+  return [{ title: "Helm Charts — Cluster Vision" }];
 }
 
 export async function loader() {
-  return fetchDiagram("versions");
+  return fetchDiagram("charts");
 }
 
 const columns: ColumnDef<VersionRow, string>[] = [
@@ -45,7 +45,7 @@ const columns: ColumnDef<VersionRow, string>[] = [
   { accessorKey: "repoUrl", header: "Repository" },
 ];
 
-export default function Versions({ loaderData }: Route.ComponentProps) {
+export default function Charts({ loaderData }: Route.ComponentProps) {
   const { diagram, generatedAt } = loaderData;
 
   const rows: VersionRow[] = useMemo(() => {
