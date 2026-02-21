@@ -8,6 +8,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 interface NodeRow {
   name: string;
   cluster: string;
+  type: string;
   roles: string;
   ip: string;
   os: string;
@@ -22,6 +23,10 @@ interface NodeRow {
   cpu: string;
   memory: string;
   arch: string;
+  provider: string;
+  gpu: string;
+  osDisk: string;
+  dataDisk: string;
 }
 
 export function meta({}: Route.MetaArgs) {
@@ -35,8 +40,10 @@ export async function loader() {
 const columns: ColumnDef<NodeRow, string>[] = [
   { accessorKey: "name", header: "Name" },
   { accessorKey: "cluster", header: "Cluster" },
+  { accessorKey: "type", header: "Type" },
   { accessorKey: "roles", header: "Roles" },
   { accessorKey: "ip", header: "IP" },
+  { accessorKey: "provider", header: "Provider" },
   {
     id: "osVersion",
     header: "OS",
@@ -69,6 +76,9 @@ const columns: ColumnDef<NodeRow, string>[] = [
   { accessorKey: "cpu", header: "CPU" },
   { accessorKey: "memory", header: "Memory" },
   { accessorKey: "arch", header: "Arch" },
+  { accessorKey: "gpu", header: "GPU" },
+  { accessorKey: "osDisk", header: "OS Disk" },
+  { accessorKey: "dataDisk", header: "Data Disk" },
 ];
 
 export default function Nodes({ loaderData }: Route.ComponentProps) {
@@ -84,7 +94,7 @@ export default function Nodes({ loaderData }: Route.ComponentProps) {
       <DataTable
         data={rows}
         columns={columns}
-        filterColumns={["cluster", "roles", "arch"]}
+        filterColumns={["cluster", "type", "roles", "arch"]}
       />
     </DiagramPage>
   );

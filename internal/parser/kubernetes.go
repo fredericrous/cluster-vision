@@ -127,7 +127,8 @@ func (p *KubernetesParser) parseNodes(ctx context.Context) []model.NodeInfo {
 		}
 
 		cpu := n.Status.Capacity.Cpu().String()
-		mem := n.Status.Capacity.Memory().String()
+		memBytes := n.Status.Capacity.Memory().Value()
+		mem := fmt.Sprintf("%.1f Gi", float64(memBytes)/(1024*1024*1024))
 
 		nodes = append(nodes, model.NodeInfo{
 			Name:             n.Name,
