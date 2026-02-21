@@ -49,6 +49,12 @@ const cards = [
     to: "/security",
   },
   {
+    id: "nodes",
+    title: "Cluster Nodes",
+    description: "Node hardware, OS versions, and update status",
+    to: "/nodes",
+  },
+  {
     id: "charts",
     title: "Helm Charts",
     description: "Helm chart versions and update status",

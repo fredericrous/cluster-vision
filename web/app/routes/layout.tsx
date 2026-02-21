@@ -8,6 +8,7 @@ const navItems = [
   { value: "/dependencies", label: "Dependencies" },
   { value: "/network", label: "Network" },
   { value: "/security", label: "Security" },
+  { value: "/nodes", label: "Nodes" },
   { value: "/charts", label: "Helm Charts" },
   { value: "/images", label: "Images" },
 ];

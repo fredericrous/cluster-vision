@@ -33,6 +33,7 @@ type Server struct {
 	k8sParsers   []*parser.KubernetesParser
 	checker      *versions.Checker
 	imageChecker *versions.ImageChecker
+	nodeChecker  *versions.NodeChecker
 	mu           sync.RWMutex
 	data         []model.DiagramResult
 	lastGen      time.Time
@@ -70,8 +71,9 @@ func New(cfg Config) (*Server, error) {
 
 	checker := versions.NewChecker(cfg.RefreshInterval, cfg.RegistryProxy)
 	imageChecker := versions.NewImageChecker()
+	nodeChecker := versions.NewNodeChecker()
 
-	return &Server{cfg: cfg, k8sParsers: parsers, checker: checker, imageChecker: imageChecker}, nil
+	return &Server{cfg: cfg, k8sParsers: parsers, checker: checker, imageChecker: imageChecker, nodeChecker: nodeChecker}, nil
 }
 
 // Start begins serving HTTP and starts the background refresh loop.
@@ -136,6 +138,8 @@ func (s *Server) refresh(ctx context.Context) {
 		clusterData.Flux = append(clusterData.Flux, p.ParseFlux(ctx)...)
 
 		clusterData.ServiceEntries = append(clusterData.ServiceEntries, p.ParseServiceEntries(ctx)...)
+
+		clusterData.Nodes = append(clusterData.Nodes, p.ParseNodes(ctx)...)
 	}
 
 	// Sort namespaces and security policies deterministically
@@ -178,6 +182,7 @@ func (s *Server) refresh(ctx context.Context) {
 	diagrams = append(diagrams, diagram.GenerateSecurity(clusterData)...)
 	diagrams = append(diagrams, diagram.GenerateImages(clusterData, s.imageChecker))
 	diagrams = append(diagrams, diagram.GenerateVersions(clusterData, s.checker))
+	diagrams = append(diagrams, diagram.GenerateNodes(clusterData, s.nodeChecker))
 
 	s.mu.Lock()
 	s.data = diagrams
@@ -211,6 +216,21 @@ func (s *Server) refresh(ctx context.Context) {
 		for i, d := range s.data {
 			if d.ID == "images" {
 				s.data[i] = imagesResult
+				break
+			}
+		}
+		s.mu.Unlock()
+	}()
+
+	// Check latest node OS/kubelet versions asynchronously
+	go func() {
+		s.nodeChecker.Check(clusterData.Nodes)
+
+		nodesResult := diagram.GenerateNodes(clusterData, s.nodeChecker)
+		s.mu.Lock()
+		for i, d := range s.data {
+			if d.ID == "nodes" {
+				s.data[i] = nodesResult
 				break
 			}
 		}

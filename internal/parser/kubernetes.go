@@ -74,6 +74,11 @@ func (p *KubernetesParser) ParseFlux(ctx context.Context) []model.FluxKustomizat
 	return p.parseFluxKustomizations(ctx)
 }
 
+// ParseNodes returns node data for this cluster.
+func (p *KubernetesParser) ParseNodes(ctx context.Context) []model.NodeInfo {
+	return p.parseNodes(ctx)
+}
+
 // ParseServiceEntries returns ServiceEntry data for this cluster.
 func (p *KubernetesParser) ParseServiceEntries(ctx context.Context) []model.ServiceEntryInfo {
 	return p.parseServiceEntries(ctx)
@@ -125,12 +130,18 @@ func (p *KubernetesParser) parseNodes(ctx context.Context) []model.NodeInfo {
 		mem := n.Status.Capacity.Memory().String()
 
 		nodes = append(nodes, model.NodeInfo{
-			Name:   n.Name,
-			IP:     ip,
-			Roles:  roles,
-			CPU:    cpu,
-			Memory: mem,
-			Labels: n.Labels,
+			Name:             n.Name,
+			Cluster:          p.clusterName,
+			IP:               ip,
+			Roles:            roles,
+			CPU:              cpu,
+			Memory:           mem,
+			Labels:           n.Labels,
+			OSImage:          n.Status.NodeInfo.OSImage,
+			KubeletVersion:   n.Status.NodeInfo.KubeletVersion,
+			ContainerRuntime: n.Status.NodeInfo.ContainerRuntimeVersion,
+			KernelVersion:    n.Status.NodeInfo.KernelVersion,
+			Architecture:     n.Status.NodeInfo.Architecture,
 		})
 	}
 	return nodes

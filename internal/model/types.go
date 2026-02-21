@@ -104,12 +104,18 @@ type DockerService struct {
 
 // NodeInfo represents a Kubernetes node.
 type NodeInfo struct {
-	Name   string
-	IP     string
-	Roles  []string
-	CPU    string
-	Memory string
-	Labels map[string]string
+	Name             string
+	Cluster          string
+	IP               string
+	Roles            []string
+	CPU              string
+	Memory           string
+	Labels           map[string]string
+	OSImage          string // e.g. "Talos (v1.9.0)"
+	KubeletVersion   string // e.g. "v1.32.0"
+	ContainerRuntime string // e.g. "containerd://2.0.0"
+	KernelVersion    string // e.g. "6.6.64-talos"
+	Architecture     string // e.g. "amd64"
 }
 
 // FluxKustomization represents a Flux Kustomization resource.
