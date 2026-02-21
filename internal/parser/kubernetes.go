@@ -93,6 +93,7 @@ func (p *KubernetesParser) ParseAll(ctx context.Context) *model.ClusterData {
 	data.EastWestGateways = p.parseEastWestGateways(ctx)
 	data.HelmReleases = p.parseHelmReleases(ctx)
 	data.HelmRepositories = p.parseHelmRepositories(ctx)
+	data.Pods = p.parsePods(ctx)
 	return data
 }
 
@@ -583,6 +584,59 @@ func (p *KubernetesParser) parseHelmRepositories(ctx context.Context) []model.He
 			Type:      repoType,
 			URL:       strVal(spec, "url"),
 		})
+	}
+	return result
+}
+
+func (p *KubernetesParser) parsePods(ctx context.Context) []model.PodImageInfo {
+	list, err := p.typed.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		slog.Warn("failed to list pods", "error", err)
+		return nil
+	}
+
+	// Build imageID lookup from container statuses
+	type statusKey struct {
+		podNS, podName, container string
+	}
+
+	var result []model.PodImageInfo
+	for _, pod := range list.Items {
+		// Skip terminal pods
+		phase := pod.Status.Phase
+		if phase == "Succeeded" || phase == "Failed" {
+			continue
+		}
+
+		// Build imageID map from status
+		imageIDs := make(map[string]string)
+		for _, cs := range pod.Status.ContainerStatuses {
+			imageIDs[cs.Name] = cs.ImageID
+		}
+		for _, cs := range pod.Status.InitContainerStatuses {
+			imageIDs[cs.Name] = cs.ImageID
+		}
+
+		for _, c := range pod.Spec.Containers {
+			result = append(result, model.PodImageInfo{
+				Namespace:     pod.Namespace,
+				PodName:       pod.Name,
+				Container:     c.Name,
+				Image:         c.Image,
+				ImageID:       imageIDs[c.Name],
+				InitContainer: false,
+			})
+		}
+		for _, c := range pod.Spec.InitContainers {
+			result = append(result, model.PodImageInfo{
+				Namespace:     pod.Namespace,
+				PodName:       pod.Name,
+				Container:     c.Name,
+				Image:         c.Image,
+				ImageID:       imageIDs[c.Name],
+				InitContainer: true,
+			})
+		}
 	}
 	return result
 }

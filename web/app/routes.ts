@@ -13,5 +13,6 @@ export default [
     route("network", "routes/network.tsx"),
     route("security", "routes/security.tsx"),
     route("versions", "routes/versions.tsx"),
+    route("images", "routes/images.tsx"),
   ]),
 ] satisfies RouteConfig;

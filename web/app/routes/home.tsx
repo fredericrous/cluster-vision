@@ -48,6 +48,18 @@ const cards = [
     description: "Istio, mTLS, auth, backup, and pod security",
     to: "/security",
   },
+  {
+    id: "versions",
+    title: "Component Versions",
+    description: "Helm chart versions and update status",
+    to: "/versions",
+  },
+  {
+    id: "images",
+    title: "Container Images",
+    description: "Container images running across the cluster with versions",
+    to: "/images",
+  },
 ];
 
 export default function Home({ loaderData }: Route.ComponentProps) {

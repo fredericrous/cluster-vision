@@ -174,6 +174,7 @@ func (s *Server) refresh(ctx context.Context) {
 		diagram.GenerateNetwork(clusterData),
 	)
 	diagrams = append(diagrams, diagram.GenerateSecurity(clusterData)...)
+	diagrams = append(diagrams, diagram.GenerateImages(clusterData))
 	diagrams = append(diagrams, diagram.GenerateVersions(clusterData, s.checker))
 
 	s.mu.Lock()

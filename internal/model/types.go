@@ -15,6 +15,17 @@ type ClusterData struct {
 	EastWestGateways      []EastWestGateway
 	HelmReleases          []HelmReleaseInfo
 	HelmRepositories      []HelmRepositoryInfo
+	Pods                  []PodImageInfo
+}
+
+// PodImageInfo represents a container image running in a pod.
+type PodImageInfo struct {
+	Namespace string
+	PodName   string
+	Container string
+	Image     string // full image ref (registry/repo:tag)
+	ImageID   string // resolved digest from pod status
+	InitContainer bool
 }
 
 // HelmReleaseInfo represents a Flux HelmRelease resource.
