@@ -96,6 +96,7 @@ func (p *KubernetesParser) ParseAll(ctx context.Context) *model.ClusterData {
 	data.ClientTrafficPolicies = p.parseClientTrafficPolicies(ctx)
 	data.ServiceEntries = p.parseServiceEntries(ctx)
 	data.EastWestGateways = p.parseEastWestGateways(ctx)
+	data.LoadBalancers = p.parseLoadBalancers(ctx)
 	data.HelmReleases = p.parseHelmReleases(ctx)
 	data.HelmRepositories = p.parseHelmRepositories(ctx)
 	data.Pods = p.parsePods(ctx)
@@ -506,6 +507,45 @@ func (p *KubernetesParser) parseEastWestGateways(ctx context.Context) []model.Ea
 			IP:      ip,
 			Port:    port,
 			Network: network,
+		})
+	}
+	return result
+}
+
+func (p *KubernetesParser) parseLoadBalancers(ctx context.Context) []model.LoadBalancerService {
+	list, err := p.typed.CoreV1().Services("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		slog.Warn("failed to list services", "error", err)
+		return nil
+	}
+
+	var result []model.LoadBalancerService
+	for _, svc := range list.Items {
+		if svc.Spec.Type != "LoadBalancer" {
+			continue
+		}
+
+		ip := ""
+		if len(svc.Status.LoadBalancer.Ingress) > 0 {
+			ip = svc.Status.LoadBalancer.Ingress[0].IP
+		}
+		if ip == "" {
+			ip = svc.Spec.LoadBalancerIP
+		}
+		if ip == "" {
+			continue
+		}
+
+		var ports []int
+		for _, p := range svc.Spec.Ports {
+			ports = append(ports, int(p.Port))
+		}
+
+		result = append(result, model.LoadBalancerService{
+			Name:      svc.Name,
+			Namespace: svc.Namespace,
+			IP:        ip,
+			Ports:     ports,
 		})
 	}
 	return result

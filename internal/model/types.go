@@ -13,6 +13,7 @@ type ClusterData struct {
 	InfraSources          []InfraSource
 	ServiceEntries        []ServiceEntryInfo
 	EastWestGateways      []EastWestGateway
+	LoadBalancers         []LoadBalancerService
 	HelmReleases          []HelmReleaseInfo
 	HelmRepositories      []HelmRepositoryInfo
 	Pods                  []PodImageInfo
@@ -66,6 +67,14 @@ type EastWestGateway struct {
 	IP      string
 	Port    int
 	Network string // from service label topology.istio.io/network
+}
+
+// LoadBalancerService represents a Kubernetes Service of type LoadBalancer.
+type LoadBalancerService struct {
+	Name      string
+	Namespace string
+	IP        string
+	Ports     []int
 }
 
 // DataSource defines where to read infrastructure data from.

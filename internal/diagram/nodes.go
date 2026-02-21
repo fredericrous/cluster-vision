@@ -46,7 +46,7 @@ func formatDiskGB(gb int) string {
 // GenerateNodes produces a table of cluster nodes with OS and kubelet version info,
 // enriched with Terraform data and load-balancer entries.
 func GenerateNodes(data *model.ClusterData, checker *versions.NodeChecker) model.DiagramResult {
-	if len(data.Nodes) == 0 && len(data.EastWestGateways) == 0 {
+	if len(data.Nodes) == 0 && len(data.LoadBalancers) == 0 {
 		return model.DiagramResult{
 			ID:      "nodes",
 			Title:   "Cluster Nodes",
@@ -134,14 +134,14 @@ func GenerateNodes(data *model.ClusterData, checker *versions.NodeChecker) model
 		rows = append(rows, row)
 	}
 
-	// Append load-balancer entries from east-west gateways.
-	for _, gw := range data.EastWestGateways {
+	// Append load-balancer service entries.
+	for _, lb := range data.LoadBalancers {
 		rows = append(rows, NodeRow{
-			Name:    gw.Name,
+			Name:    lb.Name,
 			Cluster: data.PrimaryCluster,
 			Type:    "load-balancer",
-			Roles:   "load-balancer",
-			IP:      gw.IP,
+			Roles:   lb.Namespace,
+			IP:      lb.IP,
 		})
 	}
 
