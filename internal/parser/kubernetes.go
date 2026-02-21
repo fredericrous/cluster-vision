@@ -608,31 +608,42 @@ func (p *KubernetesParser) parsePods(ctx context.Context) []model.PodImageInfo {
 			continue
 		}
 
-		// Build imageID map from status
+		// Build image and imageID maps from status (status has resolved image refs)
+		statusImages := make(map[string]string)
 		imageIDs := make(map[string]string)
 		for _, cs := range pod.Status.ContainerStatuses {
+			statusImages[cs.Name] = cs.Image
 			imageIDs[cs.Name] = cs.ImageID
 		}
 		for _, cs := range pod.Status.InitContainerStatuses {
+			statusImages[cs.Name] = cs.Image
 			imageIDs[cs.Name] = cs.ImageID
 		}
 
 		for _, c := range pod.Spec.Containers {
+			img := c.Image
+			if resolved := statusImages[c.Name]; resolved != "" {
+				img = resolved
+			}
 			result = append(result, model.PodImageInfo{
 				Namespace:     pod.Namespace,
 				PodName:       pod.Name,
 				Container:     c.Name,
-				Image:         c.Image,
+				Image:         img,
 				ImageID:       imageIDs[c.Name],
 				InitContainer: false,
 			})
 		}
 		for _, c := range pod.Spec.InitContainers {
+			img := c.Image
+			if resolved := statusImages[c.Name]; resolved != "" {
+				img = resolved
+			}
 			result = append(result, model.PodImageInfo{
 				Namespace:     pod.Namespace,
 				PodName:       pod.Name,
 				Container:     c.Name,
-				Image:         c.Image,
+				Image:         img,
 				ImageID:       imageIDs[c.Name],
 				InitContainer: true,
 			})

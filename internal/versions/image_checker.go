@@ -1,11 +1,13 @@
 package versions
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -17,21 +19,26 @@ import (
 
 // ImageChecker periodically checks container image registries for latest tags.
 type ImageChecker struct {
-	mu         sync.RWMutex
-	latest     map[string]string // "image|tag" → latest tag
-	tokenCache map[string]string // registry host → bearer token
-	lastCheck  time.Time
-	checking   atomic.Bool
-	client     *http.Client
+	mu        sync.RWMutex
+	latest    map[string]string // "image|tag" → latest tag
+	lastCheck time.Time
+	checking  atomic.Bool
+	client    *http.Client
+	insecure  *http.Client // for HTTP-only registries
 }
 
 // NewImageChecker creates a new ImageChecker.
 func NewImageChecker() *ImageChecker {
 	return &ImageChecker{
-		latest:     make(map[string]string),
-		tokenCache: make(map[string]string),
+		latest: make(map[string]string),
 		client: &http.Client{
 			Timeout: 15 * time.Second,
+		},
+		insecure: &http.Client{
+			Timeout: 15 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			},
 		},
 	}
 }
@@ -59,6 +66,14 @@ func extractVariant(tag string) (v variant, sv semver, ok bool) {
 // variantKey returns a string key that identifies a variant pattern.
 func (v variant) key() string {
 	return v.prefix + "|" + v.suffix
+}
+
+// skipRegistry returns true for registries we can't reach from inside the cluster
+// or that don't support the Docker v2 API.
+func skipRegistry(registry string) bool {
+	return strings.Contains(registry, ".svc.cluster.local") ||
+		strings.HasSuffix(registry, ".local") ||
+		strings.HasPrefix(registry, "localhost")
 }
 
 // Check fetches latest tags for all unique image repos used by pods.
@@ -100,14 +115,20 @@ func (ic *ImageChecker) Check(pods []model.PodImageInfo) {
 		ri.tags[tag] = true
 	}
 
-	results := make(map[string]string)
 	skipRegistries := make(map[string]bool) // registries that returned 429
+	checked := 0
+	resolved := 0
 
 	for image, ri := range repos {
+		if skipRegistry(ri.registry) {
+			ic.setResults(image, ri.tags, "-")
+			checked++
+			continue
+		}
+
 		if skipRegistries[ri.registry] {
-			for tag := range ri.tags {
-				results[image+"|"+tag] = "-"
-			}
+			ic.setResults(image, ri.tags, "-")
+			checked++
 			continue
 		}
 
@@ -119,31 +140,45 @@ func (ic *ImageChecker) Check(pods []model.PodImageInfo) {
 			} else {
 				slog.Warn("image check: failed to list tags", "image", image, "error", err)
 			}
-			for tag := range ri.tags {
-				results[image+"|"+tag] = "-"
-			}
+			ic.setResults(image, ri.tags, "-")
+			checked++
 			time.Sleep(2 * time.Second)
 			continue
 		}
 
 		// For each deployed tag, find the highest matching tag with the same variant.
+		results := make(map[string]string)
 		for tag := range ri.tags {
 			latest := highestMatchingTag(tag, allTags)
-			results[image+"|"+latest] = latest // self-reference is fine
-			results[image+"|"+tag] = latest
+			results[tag] = latest
 		}
 
+		// Write results incrementally so partial data is visible.
+		ic.mu.Lock()
+		for tag, latest := range results {
+			ic.latest[image+"|"+tag] = latest
+		}
+		ic.mu.Unlock()
+
+		checked++
+		resolved++
 		time.Sleep(2 * time.Second)
 	}
 
 	ic.mu.Lock()
-	for k, v := range results {
-		ic.latest[k] = v
-	}
 	ic.lastCheck = time.Now()
 	ic.mu.Unlock()
 
-	slog.Info("image check complete", "repos", len(repos), "results", len(results))
+	slog.Info("image check complete", "repos", checked, "resolved", resolved)
+}
+
+// setResults writes "-" for all tags of an image (used for errors/skips).
+func (ic *ImageChecker) setResults(image string, tags map[string]bool, value string) {
+	ic.mu.Lock()
+	for tag := range tags {
+		ic.latest[image+"|"+tag] = value
+	}
+	ic.mu.Unlock()
 }
 
 // GetLatest returns the cached latest tag for a given image+tag combination.
@@ -186,7 +221,6 @@ func highestMatchingTag(deployedTag string, allTags []string) string {
 }
 
 // listTags fetches the tag list for an image from an OCI registry.
-// Uses proactive auth from token cache and follows pagination.
 func (ic *ImageChecker) listTags(registry, imagePath string) ([]string, error) {
 	host := registry
 	// docker.io → registry-1.docker.io
@@ -195,10 +229,10 @@ func (ic *ImageChecker) listTags(registry, imagePath string) ([]string, error) {
 	}
 
 	var allTags []string
-	url := fmt.Sprintf("https://%s/v2/%s/tags/list?n=1000", host, imagePath)
+	tagURL := fmt.Sprintf("https://%s/v2/%s/tags/list?n=1000", host, imagePath)
 
-	for url != "" {
-		body, nextURL, err := ic.fetchWithAuth(url)
+	for tagURL != "" {
+		body, nextURL, err := ic.fetchWithAuth(tagURL, host)
 		if err != nil {
 			return nil, err
 		}
@@ -211,51 +245,27 @@ func (ic *ImageChecker) listTags(registry, imagePath string) ([]string, error) {
 		}
 
 		allTags = append(allTags, tagList.Tags...)
-		url = nextURL
+		tagURL = nextURL
 	}
 
 	return allTags, nil
 }
 
-// fetchWithAuth performs an HTTP GET with proactive bearer auth from cache,
-// falling back to 401 challenge auth. Returns body and next page URL.
-func (ic *ImageChecker) fetchWithAuth(url string) (body []byte, nextURL string, err error) {
-	host := extractHost(url)
-
-	// Try with cached token first
-	ic.mu.RLock()
-	token := ic.tokenCache[host]
-	ic.mu.RUnlock()
-
-	if token != "" {
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return nil, "", err
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
-
-		resp, err := ic.client.Do(req)
-		if err != nil {
-			return nil, "", fmt.Errorf("fetching %s: %w", url, err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode == http.StatusOK {
-			b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-			return b, parseLinkNext(resp.Header.Get("Link"), url), err
-		}
-
-		if resp.StatusCode == http.StatusTooManyRequests {
-			return nil, "", fmt.Errorf("429 rate limited")
-		}
-
-		// Token expired or invalid — fall through to unauthenticated request
-	}
-
-	// Unauthenticated request (or cached token failed)
-	resp, err := ic.client.Get(url)
+// fetchWithAuth performs an HTTP GET, handling 401 Bearer challenge auth.
+// Each request gets a fresh token scoped to the correct repository.
+func (ic *ImageChecker) fetchWithAuth(reqURL, registryHost string) (body []byte, nextURL string, err error) {
+	resp, err := ic.client.Get(reqURL)
 	if err != nil {
-		return nil, "", fmt.Errorf("fetching %s: %w", url, err)
+		// HTTPS failed — try HTTP for registries with port (likely internal)
+		if strings.Contains(registryHost, ":") {
+			httpURL := strings.Replace(reqURL, "https://", "http://", 1)
+			resp, err = ic.insecure.Get(httpURL)
+			if err != nil {
+				return nil, "", fmt.Errorf("fetching %s: %w", reqURL, err)
+			}
+		} else {
+			return nil, "", fmt.Errorf("fetching %s: %w", reqURL, err)
+		}
 	}
 	defer resp.Body.Close()
 
@@ -269,24 +279,20 @@ func (ic *ImageChecker) fetchWithAuth(url string) (body []byte, nextURL string, 
 			return nil, "", fmt.Errorf("401 with no WWW-Authenticate header")
 		}
 
-		newToken, err := ic.getToken(challenge)
-		if err != nil {
-			return nil, "", fmt.Errorf("getting auth token: %w", err)
+		token, tokenErr := ic.getToken(challenge)
+		if tokenErr != nil {
+			return nil, "", fmt.Errorf("getting auth token: %w", tokenErr)
 		}
 
-		ic.mu.Lock()
-		ic.tokenCache[host] = newToken
-		ic.mu.Unlock()
-
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return nil, "", err
+		req, reqErr := http.NewRequest("GET", reqURL, nil)
+		if reqErr != nil {
+			return nil, "", reqErr
 		}
-		req.Header.Set("Authorization", "Bearer "+newToken)
+		req.Header.Set("Authorization", "Bearer "+token)
 
-		resp2, err := ic.client.Do(req)
-		if err != nil {
-			return nil, "", fmt.Errorf("authenticated request: %w", err)
+		resp2, doErr := ic.client.Do(req)
+		if doErr != nil {
+			return nil, "", fmt.Errorf("authenticated request: %w", doErr)
 		}
 		defer resp2.Body.Close()
 
@@ -294,8 +300,8 @@ func (ic *ImageChecker) fetchWithAuth(url string) (body []byte, nextURL string, 
 			return nil, "", fmt.Errorf("registry returned %d after auth", resp2.StatusCode)
 		}
 
-		b, err := io.ReadAll(io.LimitReader(resp2.Body, 1<<20))
-		return b, parseLinkNext(resp2.Header.Get("Link"), url), err
+		b, readErr := io.ReadAll(io.LimitReader(resp2.Body, 1<<20))
+		return b, parseLinkNext(resp2.Header.Get("Link"), reqURL), readErr
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -303,7 +309,7 @@ func (ic *ImageChecker) fetchWithAuth(url string) (body []byte, nextURL string, 
 	}
 
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	return b, parseLinkNext(resp.Header.Get("Link"), url), err
+	return b, parseLinkNext(resp.Header.Get("Link"), reqURL), err
 }
 
 // getToken parses a WWW-Authenticate Bearer challenge and fetches an anonymous token.
@@ -316,19 +322,23 @@ func (ic *ImageChecker) getToken(challenge string) (string, error) {
 		return "", fmt.Errorf("no realm in challenge: %s", challenge)
 	}
 
-	tokenURL := realm
-	sep := "?"
+	// Build token URL with properly encoded query parameters.
+	u, err := url.Parse(realm)
+	if err != nil {
+		return "", fmt.Errorf("invalid realm URL %q: %w", realm, err)
+	}
+	q := u.Query()
 	if service := params["service"]; service != "" {
-		tokenURL += sep + "service=" + service
-		sep = "&"
+		q.Set("service", service)
 	}
 	if scope := params["scope"]; scope != "" {
-		tokenURL += sep + "scope=" + scope
+		q.Set("scope", scope)
 	}
+	u.RawQuery = q.Encode()
 
-	resp, err := ic.client.Get(tokenURL)
+	resp, err := ic.client.Get(u.String())
 	if err != nil {
-		return "", fmt.Errorf("fetching token from %s: %w", tokenURL, err)
+		return "", fmt.Errorf("fetching token from %s: %w", u.String(), err)
 	}
 	defer resp.Body.Close()
 

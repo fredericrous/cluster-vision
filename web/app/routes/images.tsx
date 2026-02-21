@@ -27,7 +27,19 @@ export async function loader() {
 
 const columns: ColumnDef<ImageRow, string>[] = [
   { accessorKey: "image", header: "Image" },
-  { accessorKey: "tag", header: "Tag" },
+  {
+    accessorKey: "tag",
+    header: "Tag",
+    cell: ({ getValue }) => {
+      const tag = getValue();
+      const isSha = /^sha256:/.test(tag) || /^[0-9a-f]{40,}$/.test(tag);
+      if (isSha) {
+        const short = tag.replace(/^sha256:/, "").slice(0, 7);
+        return <span title={tag}>{short}</span>;
+      }
+      return <>{tag}</>;
+    },
+  },
   {
     accessorKey: "latest",
     header: "Latest",
