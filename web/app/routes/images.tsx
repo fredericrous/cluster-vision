@@ -35,7 +35,7 @@ const columns: ColumnDef<ImageRow, string>[] = [
       const isSha = /^sha256:/.test(tag) || /^[0-9a-f]{40,}$/.test(tag);
       if (isSha) {
         const short = tag.replace(/^sha256:/, "").slice(0, 7);
-        return <span title={tag}>{short}</span>;
+        return <span className={tableStyles.tooltip} data-tooltip={tag}>{short}</span>;
       }
       return <>{tag}</>;
     },

@@ -112,3 +112,33 @@
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+
+.tooltip {
+  position: relative;
+  cursor: default;
+  border-bottom: 1px dotted var(--text-muted);
+}
+
+.tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: 0.25rem;
+  padding: 0.375rem 0.625rem;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.75rem;
+  font-family: monospace;
+  white-space: nowrap;
+  z-index: 10;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.tooltip:hover::after {
+  opacity: 1;
+}
