@@ -281,6 +281,7 @@ func (p *KubernetesParser) parseGateways(ctx context.Context) []model.GatewayInf
 		gw := model.GatewayInfo{
 			Name:      item.GetName(),
 			Namespace: item.GetNamespace(),
+			Cluster:   p.clusterName,
 		}
 
 		spec, _ := item.Object["spec"].(map[string]interface{})
@@ -326,6 +327,7 @@ func (p *KubernetesParser) parseHTTPRoutes(ctx context.Context) []model.HTTPRout
 		route := model.HTTPRouteInfo{
 			Name:      item.GetName(),
 			Namespace: item.GetNamespace(),
+			Cluster:   p.clusterName,
 		}
 
 		spec, _ := item.Object["spec"].(map[string]interface{})
@@ -486,6 +488,7 @@ func (p *KubernetesParser) parseClientTrafficPolicies(ctx context.Context) []mod
 
 		result = append(result, model.ClientTrafficPolicyInfo{
 			Name:        item.GetName(),
+			Cluster:     p.clusterName,
 			SectionName: sectionName,
 			Optional:    optional,
 		})
@@ -575,6 +578,7 @@ func (p *KubernetesParser) parseEastWestGateways(ctx context.Context) []model.Ea
 
 		result = append(result, model.EastWestGateway{
 			Name:    svc.Name,
+			Cluster: p.clusterName,
 			IP:      ip,
 			Port:    port,
 			Network: network,
@@ -615,6 +619,7 @@ func (p *KubernetesParser) parseLoadBalancers(ctx context.Context) []model.LoadB
 		result = append(result, model.LoadBalancerService{
 			Name:      svc.Name,
 			Namespace: svc.Namespace,
+			Cluster:   p.clusterName,
 			IP:        ip,
 			Ports:     ports,
 		})

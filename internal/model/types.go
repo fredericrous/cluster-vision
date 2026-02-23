@@ -31,11 +31,11 @@ type ClusterData struct {
 
 // PodImageInfo represents a container image running in a pod.
 type PodImageInfo struct {
-	Namespace string
-	PodName   string
-	Container string
-	Image     string // full image ref (registry/repo:tag)
-	ImageID   string // resolved digest from pod status
+	Namespace     string
+	PodName       string
+	Container     string
+	Image         string // full image ref (registry/repo:tag)
+	ImageID       string // resolved digest from pod status
 	InitContainer bool
 }
 
@@ -74,6 +74,7 @@ type ServiceEntryInfo struct {
 // EastWestGateway represents an Istio east-west gateway Service.
 type EastWestGateway struct {
 	Name    string
+	Cluster string
 	IP      string
 	Port    int
 	Network string // from service label topology.istio.io/network
@@ -83,6 +84,7 @@ type EastWestGateway struct {
 type LoadBalancerService struct {
 	Name      string
 	Namespace string
+	Cluster   string
 	IP        string
 	Ports     []int
 }
@@ -153,6 +155,7 @@ type FluxKustomization struct {
 type GatewayInfo struct {
 	Name      string
 	Namespace string
+	Cluster   string
 	Listeners []ListenerInfo
 }
 
@@ -168,6 +171,7 @@ type ListenerInfo struct {
 type HTTPRouteInfo struct {
 	Name        string
 	Namespace   string
+	Cluster     string
 	Hostnames   []string
 	SectionName string
 	Backends    []BackendRef
@@ -200,6 +204,7 @@ type SecurityPolicyInfo struct {
 // ClientTrafficPolicyInfo tracks client mTLS policies at the ingress.
 type ClientTrafficPolicyInfo struct {
 	Name        string
+	Cluster     string
 	SectionName string
 	Optional    bool
 }

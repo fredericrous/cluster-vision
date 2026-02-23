@@ -39,24 +39,27 @@ func GenerateSecurity(data *model.ClusterData) []model.DiagramResult {
 		extAuthNS[sp.Cluster+"/"+sp.Namespace] = true
 	}
 
-	// Build client mTLS map: sectionName → optional from ClientTrafficPolicies
-	ctpBySection := make(map[string]bool) // sectionName → optional
+	// Build client mTLS map: cluster/sectionName → optional from ClientTrafficPolicies
+	ctpBySection := make(map[string]bool)
 	for _, ctp := range data.ClientTrafficPolicies {
-		ctpBySection[ctp.SectionName] = ctp.Optional
+		ctpBySection[ctp.Cluster+"/"+ctp.SectionName] = ctp.Optional
 	}
 
 	// Cross-reference HTTPRoutes with CTPs for client mTLS and ingress exposure
-	// HTTPRoutes are only from the primary cluster
-	ingressNS := make(map[string]bool)   // cluster/namespace → has HTTPRoute
+	ingressNS := make(map[string]bool)    // cluster/namespace → has HTTPRoute
 	clientMTLS := make(map[string]string) // cluster/namespace → "yes"|"optional"
 	for _, route := range data.HTTPRoutes {
-		key := data.PrimaryCluster + "/" + route.Namespace
+		cluster := route.Cluster
+		if cluster == "" {
+			cluster = data.PrimaryCluster
+		}
+		key := cluster + "/" + route.Namespace
 		ingressNS[key] = true
 
 		if route.SectionName == "" {
 			continue
 		}
-		optional, hasCTP := ctpBySection[route.SectionName]
+		optional, hasCTP := ctpBySection[cluster+"/"+route.SectionName]
 		if !hasCTP {
 			continue
 		}

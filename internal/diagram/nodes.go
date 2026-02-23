@@ -15,7 +15,7 @@ import (
 type NodeRow struct {
 	Name             string `json:"name"`
 	Cluster          string `json:"cluster"`
-	Type             string `json:"type"`     // "node" | "load-balancer"
+	Type             string `json:"type"` // "node" | "load-balancer"
 	Roles            string `json:"roles"`
 	IP               string `json:"ip"`
 	OS               string `json:"os"`
@@ -147,9 +147,13 @@ func GenerateNodes(data *model.ClusterData, checker *versions.NodeChecker) model
 
 	// Append load-balancer service entries.
 	for _, lb := range data.LoadBalancers {
+		cluster := lb.Cluster
+		if cluster == "" {
+			cluster = data.PrimaryCluster
+		}
 		rows = append(rows, NodeRow{
 			Name:    lb.Name,
-			Cluster: data.PrimaryCluster,
+			Cluster: cluster,
 			Type:    "load-balancer",
 			Roles:   lb.Namespace,
 			IP:      lb.IP,

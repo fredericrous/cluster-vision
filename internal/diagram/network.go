@@ -26,7 +26,11 @@ func GenerateNetwork(data *model.ClusterData) model.DiagramResult {
 	// One subgraph per gateway
 	for gi, gw := range data.Gateways {
 		gwID := fmt.Sprintf("gw%d", gi)
-		b.WriteString(fmt.Sprintf("  %s{\"%s<br/>%s\"}\n", gwID, gw.Name, gw.Namespace))
+		clusterLabel := gw.Cluster
+		if clusterLabel == "" {
+			clusterLabel = data.PrimaryCluster
+		}
+		b.WriteString(fmt.Sprintf("  %s{\"%s<br/>%s<br/>%s\"}\n", gwID, gw.Name, gw.Namespace, clusterLabel))
 		b.WriteString(fmt.Sprintf("  internet -->|HTTPS| %s\n\n", gwID))
 
 		// Build hostname → listener mapping
@@ -37,16 +41,12 @@ func GenerateNetwork(data *model.ClusterData) model.DiagramResult {
 			}
 		}
 
-		// Group routes by namespace for visual clarity
-		nsByRoute := make(map[string][]model.HTTPRouteInfo)
-		for _, r := range data.HTTPRoutes {
-			// Only include routes targeting this gateway
-			nsByRoute[r.Namespace] = append(nsByRoute[r.Namespace], r)
-		}
-
-		// Collect routes that match this gateway's listeners
+		// Collect routes that match this gateway's listeners in the same cluster.
 		var matched []model.HTTPRouteInfo
 		for _, r := range data.HTTPRoutes {
+			if r.Cluster != "" && gw.Cluster != "" && r.Cluster != gw.Cluster {
+				continue
+			}
 			for _, h := range r.Hostnames {
 				if _, ok := hostToListener[h]; ok {
 					matched = append(matched, r)
@@ -68,10 +68,16 @@ func GenerateNetwork(data *model.ClusterData) model.DiagramResult {
 			if len(r.Hostnames) > 0 {
 				hostname = r.Hostnames[0]
 			}
+			routeCluster := r.Cluster
+			if routeCluster == "" {
+				routeCluster = data.PrimaryCluster
+			}
 
 			label := r.Name
 			if hostname != "" {
-				label = fmt.Sprintf("%s<br/><small>%s</small>", r.Name, hostname)
+				label = fmt.Sprintf("%s<br/><small>%s</small><br/><small>%s</small>", r.Name, hostname, routeCluster)
+			} else {
+				label = fmt.Sprintf("%s<br/><small>%s</small>", r.Name, routeCluster)
 			}
 
 			b.WriteString(fmt.Sprintf("  %s[\"%s\"]\n", routeID, label))

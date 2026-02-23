@@ -121,33 +121,38 @@ func (s *Server) refresh(ctx context.Context) {
 	slog.Info("refreshing cluster data")
 	start := time.Now()
 
-	// Primary cluster — full data
+	// All Kubernetes clusters get the same parsing treatment.
+	// The first parser remains the primary cluster for UI semantics.
 	clusterData := s.k8sParsers[0].ParseAll(ctx)
 	clusterData.PrimaryCluster = s.cfg.ClusterName
 
-	// Additional clusters — merge data from secondary clusters
+	// Merge full data from secondary clusters.
 	for _, p := range s.k8sParsers[1:] {
-		ns, sp := p.ParseSecurity(ctx)
-		clusterData.Namespaces = append(clusterData.Namespaces, ns...)
-		clusterData.SecurityPolicies = append(clusterData.SecurityPolicies, sp...)
-
-		hr, repo := p.ParseHelm(ctx)
-		clusterData.HelmReleases = append(clusterData.HelmReleases, hr...)
-		clusterData.HelmRepositories = append(clusterData.HelmRepositories, repo...)
-
-		clusterData.Flux = append(clusterData.Flux, p.ParseFlux(ctx)...)
-		clusterData.ServiceEntries = append(clusterData.ServiceEntries, p.ParseServiceEntries(ctx)...)
-		clusterData.Nodes = append(clusterData.Nodes, p.ParseNodes(ctx)...)
-		clusterData.Workloads = append(clusterData.Workloads, p.ParseWorkloads(ctx)...)
-		clusterData.Storage = append(clusterData.Storage, p.ParseStorage(ctx)...)
-		clusterData.CRDs = append(clusterData.CRDs, p.ParseCRDs(ctx)...)
-		clusterData.Quotas = append(clusterData.Quotas, p.ParseQuotas(ctx)...)
-		clusterData.Certificates = append(clusterData.Certificates, p.ParseCertificates(ctx)...)
-		clusterData.NetworkPolicies = append(clusterData.NetworkPolicies, p.ParseNetworkPolicies(ctx)...)
-		clusterData.Configs = append(clusterData.Configs, p.ParseConfigs(ctx)...)
-		clusterData.Services = append(clusterData.Services, p.ParseServices(ctx)...)
-		clusterData.RBACBindings = append(clusterData.RBACBindings, p.ParseRBAC(ctx)...)
-		clusterData.VeleroSchedules = append(clusterData.VeleroSchedules, p.ParseVeleroSchedules(ctx)...)
+		secondary := p.ParseAll(ctx)
+		clusterData.Nodes = append(clusterData.Nodes, secondary.Nodes...)
+		clusterData.Flux = append(clusterData.Flux, secondary.Flux...)
+		clusterData.Gateways = append(clusterData.Gateways, secondary.Gateways...)
+		clusterData.HTTPRoutes = append(clusterData.HTTPRoutes, secondary.HTTPRoutes...)
+		clusterData.Namespaces = append(clusterData.Namespaces, secondary.Namespaces...)
+		clusterData.SecurityPolicies = append(clusterData.SecurityPolicies, secondary.SecurityPolicies...)
+		clusterData.ClientTrafficPolicies = append(clusterData.ClientTrafficPolicies, secondary.ClientTrafficPolicies...)
+		clusterData.InfraSources = append(clusterData.InfraSources, secondary.InfraSources...)
+		clusterData.ServiceEntries = append(clusterData.ServiceEntries, secondary.ServiceEntries...)
+		clusterData.EastWestGateways = append(clusterData.EastWestGateways, secondary.EastWestGateways...)
+		clusterData.LoadBalancers = append(clusterData.LoadBalancers, secondary.LoadBalancers...)
+		clusterData.HelmReleases = append(clusterData.HelmReleases, secondary.HelmReleases...)
+		clusterData.HelmRepositories = append(clusterData.HelmRepositories, secondary.HelmRepositories...)
+		clusterData.Pods = append(clusterData.Pods, secondary.Pods...)
+		clusterData.Workloads = append(clusterData.Workloads, secondary.Workloads...)
+		clusterData.Storage = append(clusterData.Storage, secondary.Storage...)
+		clusterData.CRDs = append(clusterData.CRDs, secondary.CRDs...)
+		clusterData.Quotas = append(clusterData.Quotas, secondary.Quotas...)
+		clusterData.Certificates = append(clusterData.Certificates, secondary.Certificates...)
+		clusterData.NetworkPolicies = append(clusterData.NetworkPolicies, secondary.NetworkPolicies...)
+		clusterData.Configs = append(clusterData.Configs, secondary.Configs...)
+		clusterData.Services = append(clusterData.Services, secondary.Services...)
+		clusterData.RBACBindings = append(clusterData.RBACBindings, secondary.RBACBindings...)
+		clusterData.VeleroSchedules = append(clusterData.VeleroSchedules, secondary.VeleroSchedules...)
 	}
 
 	// Sort namespaces and security policies deterministically
