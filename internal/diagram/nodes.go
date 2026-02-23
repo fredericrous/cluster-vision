@@ -3,6 +3,7 @@ package diagram
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -30,6 +31,7 @@ type NodeRow struct {
 	Memory           string `json:"memory"`
 	Arch             string `json:"arch"`
 	Provider         string `json:"provider"` // e.g. "proxmox"
+	Distro           string `json:"distro"`   // K8s distribution, e.g. "Talos", "K3s"
 	GPU              string `json:"gpu"`
 	OSDisk           string `json:"osDisk"`   // e.g. "32 GB"
 	DataDisk         string `json:"dataDisk"` // e.g. "100 GB"
@@ -114,6 +116,7 @@ func GenerateNodes(data *model.ClusterData, checker *versions.NodeChecker) model
 			CPU:              n.CPU,
 			Memory:           n.Memory,
 			Arch:             n.Architecture,
+			Distro:           capitalizeFirst(distro),
 		}
 
 		// Enrich with Terraform data.
@@ -122,6 +125,14 @@ func GenerateNodes(data *model.ClusterData, checker *versions.NodeChecker) model
 			row.GPU = tfn.GPU
 			row.OSDisk = formatDiskGB(tfn.OSDiskGB)
 			row.DataDisk = formatDiskGB(tfn.DataDiskGB)
+		}
+
+		// Layered provider fallback: TF enrichment → ProviderID → DataSource platform.
+		if row.Provider == "" {
+			row.Provider = extractProviderFromID(n.ProviderID)
+		}
+		if row.Provider == "" {
+			row.Provider = n.Platform
 		}
 
 		// GPU fallback: check K8s node labels.
@@ -163,4 +174,25 @@ func GenerateNodes(data *model.ClusterData, checker *versions.NodeChecker) model
 		Type:    "table",
 		Content: string(tableJSON),
 	}
+}
+
+// capitalizeFirst returns the string with the first letter uppercased.
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return ""
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// extractProviderFromID extracts the scheme (platform name) from a node's ProviderID.
+// For example, "proxmox://region/zone/uuid" returns "proxmox".
+func extractProviderFromID(providerID string) string {
+	if providerID == "" {
+		return ""
+	}
+	u, err := url.Parse(providerID)
+	if err != nil || u.Scheme == "" {
+		return ""
+	}
+	return u.Scheme
 }

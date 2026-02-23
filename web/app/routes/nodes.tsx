@@ -24,6 +24,7 @@ interface NodeRow {
   memory: string;
   arch: string;
   provider: string;
+  distro: string;
   gpu: string;
   osDisk: string;
   dataDisk: string;
@@ -44,6 +45,7 @@ const columns: ColumnDef<NodeRow, string>[] = [
   { accessorKey: "roles", header: "Roles" },
   { accessorKey: "ip", header: "IP" },
   { accessorKey: "provider", header: "Provider" },
+  { accessorKey: "distro", header: "Distro" },
   {
     id: "osVersion",
     header: "OS",

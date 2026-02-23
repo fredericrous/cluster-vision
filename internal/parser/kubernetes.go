@@ -24,11 +24,13 @@ type KubernetesParser struct {
 	typed       kubernetes.Interface
 	dynamic     dynamic.Interface
 	clusterName string
+	platform    string // optional: platform name applied to all nodes (e.g. "QNAP")
 }
 
 // NewKubernetesParser creates a parser from a kubeconfig path and cluster name.
 // Pass "" for kubeconfig to use in-cluster config.
-func NewKubernetesParser(kubeconfig, clusterName string) (*KubernetesParser, error) {
+// The platform parameter is optional; when set, all parsed nodes inherit it as a fallback.
+func NewKubernetesParser(kubeconfig, clusterName, platform string) (*KubernetesParser, error) {
 	var cfg *rest.Config
 	var err error
 
@@ -58,7 +60,7 @@ func NewKubernetesParser(kubeconfig, clusterName string) (*KubernetesParser, err
 		return nil, fmt.Errorf("creating dynamic client: %w", err)
 	}
 
-	return &KubernetesParser{typed: typed, dynamic: dyn, clusterName: clusterName}, nil
+	return &KubernetesParser{typed: typed, dynamic: dyn, clusterName: clusterName, platform: platform}, nil
 }
 
 // ParseSecurity returns only namespace and security policy data for this cluster.
@@ -211,6 +213,8 @@ func (p *KubernetesParser) parseNodes(ctx context.Context) []model.NodeInfo {
 			ContainerRuntime: n.Status.NodeInfo.ContainerRuntimeVersion,
 			KernelVersion:    n.Status.NodeInfo.KernelVersion,
 			Architecture:     n.Status.NodeInfo.Architecture,
+			ProviderID:       n.Spec.ProviderID,
+			Platform:         p.platform,
 		})
 	}
 	return nodes

@@ -45,7 +45,7 @@ func New(cfg Config) (*Server, error) {
 		cfg.ClusterName = "Homelab"
 	}
 
-	k8s, err := parser.NewKubernetesParser(cfg.Kubeconfig, cfg.ClusterName)
+	k8s, err := parser.NewKubernetesParser(cfg.Kubeconfig, cfg.ClusterName, "")
 	if err != nil {
 		return nil, fmt.Errorf("creating k8s parser: %w", err)
 	}
@@ -60,7 +60,7 @@ func New(cfg Config) (*Server, error) {
 			slog.Warn("skipping kubernetes data source: kubeconfig not readable", "name", ds.Name, "path", ds.Path, "error", err)
 			continue
 		}
-		p, err := parser.NewKubernetesParser(ds.Path, ds.Name)
+		p, err := parser.NewKubernetesParser(ds.Path, ds.Name, ds.Platform)
 		if err != nil {
 			slog.Warn("skipping kubernetes data source: failed to create parser", "name", ds.Name, "error", err)
 			continue

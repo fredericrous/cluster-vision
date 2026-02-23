@@ -30,15 +30,16 @@ clusterName: ""
 dataSources: []
 # dataSources:
 #   - name: Homelab
-#     type: tfstate           # "tfstate" or "docker-compose"
+#     type: tfstate           # "tfstate", "docker-compose", or "kubernetes"
 #     secret:
 #       name: infra-tfstate   # K8s Secret name
 #       key: terraform.tfstate # key within the Secret
 #   - name: NAS
-#     type: docker-compose
+#     type: kubernetes
+#     platform: "QNAP"       # optional: platform name shown in Nodes page Provider column
 #     secret:
-#       name: infra-docker-compose
-#       key: docker-compose.yaml
+#       name: nas-kubeconfig
+#       key: kubeconfig
 
 # OCI registry proxy host:port (e.g. Zot). When set, the version checker resolves
 # upstream registry URLs instead of querying the proxy (which only has cached tags).

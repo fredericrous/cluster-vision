@@ -66,6 +66,9 @@ Build DATA_SOURCES JSON from dataSources values with computed mount paths.
 {{- $sources := list -}}
 {{- range $i, $ds := .Values.dataSources -}}
 {{- $source := dict "name" $ds.name "type" $ds.type "path" (printf "/data/source-%d/data" $i) -}}
+{{- if $ds.platform -}}
+{{- $source = set $source "platform" $ds.platform -}}
+{{- end -}}
 {{- $sources = append $sources $source -}}
 {{- end -}}
 {{- $sources | toJson -}}

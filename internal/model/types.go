@@ -90,9 +90,10 @@ type LoadBalancerService struct {
 // DataSource defines where to read infrastructure data from.
 // The file is expected to be mounted from a Kubernetes Secret (e.g. via ExternalSecrets from Vault).
 type DataSource struct {
-	Name string `json:"name"`
-	Type string `json:"type"` // "tfstate" | "docker-compose"
-	Path string `json:"path"` // path to the mounted file
+	Name     string `json:"name"`
+	Type     string `json:"type"`     // "tfstate" | "docker-compose" | "kubernetes"
+	Path     string `json:"path"`     // path to the mounted file
+	Platform string `json:"platform"` // optional: platform name for K8s nodes (e.g. "QNAP")
 }
 
 // InfraSource holds parsed infrastructure data from one source.
@@ -135,6 +136,8 @@ type NodeInfo struct {
 	ContainerRuntime string // e.g. "containerd://2.0.0"
 	KernelVersion    string // e.g. "6.6.64-talos"
 	Architecture     string // e.g. "amd64"
+	ProviderID       string // node.Spec.ProviderID (e.g. "proxmox://region/zone/uuid")
+	Platform         string // platform name from DataSource config (e.g. "QNAP")
 }
 
 // FluxKustomization represents a Flux Kustomization resource.
