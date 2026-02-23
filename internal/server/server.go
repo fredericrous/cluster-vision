@@ -125,7 +125,7 @@ func (s *Server) refresh(ctx context.Context) {
 	clusterData := s.k8sParsers[0].ParseAll(ctx)
 	clusterData.PrimaryCluster = s.cfg.ClusterName
 
-	// Additional clusters — security + helm + flux data
+	// Additional clusters — merge data from secondary clusters
 	for _, p := range s.k8sParsers[1:] {
 		ns, sp := p.ParseSecurity(ctx)
 		clusterData.Namespaces = append(clusterData.Namespaces, ns...)
@@ -136,10 +136,18 @@ func (s *Server) refresh(ctx context.Context) {
 		clusterData.HelmRepositories = append(clusterData.HelmRepositories, repo...)
 
 		clusterData.Flux = append(clusterData.Flux, p.ParseFlux(ctx)...)
-
 		clusterData.ServiceEntries = append(clusterData.ServiceEntries, p.ParseServiceEntries(ctx)...)
-
 		clusterData.Nodes = append(clusterData.Nodes, p.ParseNodes(ctx)...)
+		clusterData.Workloads = append(clusterData.Workloads, p.ParseWorkloads(ctx)...)
+		clusterData.Storage = append(clusterData.Storage, p.ParseStorage(ctx)...)
+		clusterData.CRDs = append(clusterData.CRDs, p.ParseCRDs(ctx)...)
+		clusterData.Quotas = append(clusterData.Quotas, p.ParseQuotas(ctx)...)
+		clusterData.Certificates = append(clusterData.Certificates, p.ParseCertificates(ctx)...)
+		clusterData.NetworkPolicies = append(clusterData.NetworkPolicies, p.ParseNetworkPolicies(ctx)...)
+		clusterData.Configs = append(clusterData.Configs, p.ParseConfigs(ctx)...)
+		clusterData.Services = append(clusterData.Services, p.ParseServices(ctx)...)
+		clusterData.RBACBindings = append(clusterData.RBACBindings, p.ParseRBAC(ctx)...)
+		clusterData.VeleroSchedules = append(clusterData.VeleroSchedules, p.ParseVeleroSchedules(ctx)...)
 	}
 
 	// Sort namespaces and security policies deterministically
@@ -183,6 +191,21 @@ func (s *Server) refresh(ctx context.Context) {
 	diagrams = append(diagrams, diagram.GenerateImages(clusterData, s.imageChecker))
 	diagrams = append(diagrams, diagram.GenerateVersions(clusterData, s.checker))
 	diagrams = append(diagrams, diagram.GenerateNodes(clusterData, s.nodeChecker))
+	diagrams = append(diagrams,
+		diagram.GenerateWorkloads(clusterData),
+		diagram.GenerateStorage(clusterData),
+		diagram.GenerateCRDs(clusterData),
+		diagram.GenerateQuotas(clusterData),
+		diagram.GenerateCertificates(clusterData),
+		diagram.GenerateNetworkPolicies(clusterData),
+		diagram.GenerateConfigs(clusterData),
+		diagram.GenerateHelmWorkloads(clusterData),
+		diagram.GenerateServiceMap(clusterData),
+		diagram.GenerateNamespaceSummary(clusterData),
+		diagram.GenerateRBAC(clusterData),
+		diagram.GenerateLabels(clusterData),
+		diagram.GenerateVelero(clusterData),
+	)
 
 	s.mu.Lock()
 	s.data = diagrams

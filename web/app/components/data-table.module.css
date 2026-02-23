@@ -97,6 +97,16 @@
   color: var(--danger);
 }
 
+.badgeWarning {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--warning-dim, rgba(234, 179, 8, 0.1));
+  color: var(--warning, #eab308);
+}
+
 .wideCell {
   min-width: 200px;
   max-width: 400px;

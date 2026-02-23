@@ -66,6 +66,84 @@ const cards = [
     description: "Container images running across the cluster with versions",
     to: "/images",
   },
+  {
+    id: "workloads",
+    title: "Workloads",
+    description: "Deployments, StatefulSets, DaemonSets, and CronJobs",
+    to: "/workloads",
+  },
+  {
+    id: "storage",
+    title: "Storage",
+    description: "PVs, PVCs, and StorageClasses",
+    to: "/storage",
+  },
+  {
+    id: "crds",
+    title: "Custom Resource Definitions",
+    description: "Installed CRDs across clusters",
+    to: "/crds",
+  },
+  {
+    id: "quotas",
+    title: "Resource Quotas",
+    description: "Quotas and limit ranges per namespace",
+    to: "/quotas",
+  },
+  {
+    id: "certificates",
+    title: "Certificates",
+    description: "TLS certificates with expiry tracking",
+    to: "/certificates",
+  },
+  {
+    id: "network-policies",
+    title: "Network Policies",
+    description: "Pod-level network access controls",
+    to: "/network-policies",
+  },
+  {
+    id: "configs",
+    title: "ConfigMaps & Secrets",
+    description: "Configuration resources with key counts",
+    to: "/configs",
+  },
+  {
+    id: "rbac",
+    title: "RBAC Inventory",
+    description: "Role bindings and access permissions",
+    to: "/rbac",
+  },
+  {
+    id: "labels",
+    title: "Labels & Annotations",
+    description: "Label taxonomy across resources",
+    to: "/labels",
+  },
+  {
+    id: "velero",
+    title: "Backup Schedules",
+    description: "Velero backup schedule configuration",
+    to: "/velero",
+  },
+  {
+    id: "helm-workloads",
+    title: "Helm to Workloads",
+    description: "Helm releases mapped to managed workloads",
+    to: "/helm-workloads",
+  },
+  {
+    id: "service-map",
+    title: "Service Mapping",
+    description: "Services mapped to target workloads",
+    to: "/service-map",
+  },
+  {
+    id: "namespace-summary",
+    title: "Namespace Summary",
+    description: "Resource counts aggregated per namespace",
+    to: "/namespace-summary",
+  },
 ];
 
 export default function Home({ loaderData }: Route.ComponentProps) {

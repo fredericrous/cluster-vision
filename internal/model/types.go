@@ -17,6 +17,16 @@ type ClusterData struct {
 	HelmReleases          []HelmReleaseInfo
 	HelmRepositories      []HelmRepositoryInfo
 	Pods                  []PodImageInfo
+	Workloads             []WorkloadInfo
+	Storage               []StorageInfo
+	CRDs                  []CRDInfo
+	Quotas                []QuotaInfo
+	Certificates          []CertificateInfo
+	NetworkPolicies       []NetworkPolicyInfo
+	Configs               []ConfigInfo
+	Services              []ServiceInfo
+	RBACBindings          []RBACBindingInfo
+	VeleroSchedules       []VeleroScheduleInfo
 }
 
 // PodImageInfo represents a container image running in a pod.
@@ -202,6 +212,120 @@ type TerraformNode struct {
 	GPU        string
 	Role       string
 	Provider   string
+}
+
+// WorkloadInfo represents a Kubernetes workload (Deployment, StatefulSet, DaemonSet, CronJob).
+type WorkloadInfo struct {
+	Name           string
+	Namespace      string
+	Cluster        string
+	Kind           string // "Deployment", "StatefulSet", "DaemonSet", "CronJob"
+	Replicas       int32
+	ReadyReplicas  int32
+	UpdateStrategy string
+	Images         []string
+	Labels         map[string]string
+	CreatedAt      string
+}
+
+// StorageInfo represents a PV, PVC, or StorageClass.
+type StorageInfo struct {
+	Name          string
+	Namespace     string
+	Cluster       string
+	Kind          string // "PersistentVolume", "PersistentVolumeClaim", "StorageClass"
+	Capacity      string
+	AccessModes   string
+	Status        string
+	StorageClass  string
+	ReclaimPolicy string
+	BoundTo       string
+}
+
+// CRDInfo represents a CustomResourceDefinition.
+type CRDInfo struct {
+	Name     string
+	Group    string
+	Versions []string
+	Scope    string
+	Cluster  string
+}
+
+// QuotaInfo represents a ResourceQuota or LimitRange.
+type QuotaInfo struct {
+	Name      string
+	Namespace string
+	Cluster   string
+	Kind      string // "ResourceQuota" or "LimitRange"
+	Resources map[string]string
+}
+
+// CertificateInfo represents a cert-manager Certificate.
+type CertificateInfo struct {
+	Name        string
+	Namespace   string
+	Cluster     string
+	DNSNames    []string
+	IssuerName  string
+	IssuerKind  string
+	NotBefore   string
+	NotAfter    string
+	RenewalTime string
+	Ready       bool
+}
+
+// NetworkPolicyInfo represents a Kubernetes NetworkPolicy.
+type NetworkPolicyInfo struct {
+	Name           string
+	Namespace      string
+	Cluster        string
+	PodSelector    string
+	PolicyTypes    []string
+	IngressSummary string
+	EgressSummary  string
+}
+
+// ConfigInfo represents a ConfigMap or Secret (metadata only, never secret data).
+type ConfigInfo struct {
+	Name         string
+	Namespace    string
+	Cluster      string
+	Kind         string // "ConfigMap" or "Secret"
+	KeyCount     int
+	ReferencedBy []string
+}
+
+// ServiceInfo represents a Kubernetes Service.
+type ServiceInfo struct {
+	Name      string
+	Namespace string
+	Cluster   string
+	Type      string // "ClusterIP", "NodePort", "LoadBalancer", "ExternalName"
+	ClusterIP string
+	Ports     string
+	Selector  map[string]string
+}
+
+// RBACBindingInfo represents a role binding subject-to-role mapping.
+type RBACBindingInfo struct {
+	SubjectName string
+	SubjectKind string // "User", "Group", "ServiceAccount"
+	RoleName    string
+	RoleKind    string // "Role", "ClusterRole"
+	Namespace   string
+	Cluster     string
+}
+
+// VeleroScheduleInfo represents a Velero backup schedule.
+type VeleroScheduleInfo struct {
+	Name       string
+	Namespace  string
+	Cluster    string
+	Schedule   string
+	IncludedNS []string
+	ExcludedNS []string
+	TTL        string
+	Phase      string
 }
 
 // DiagramResult holds a generated diagram.
