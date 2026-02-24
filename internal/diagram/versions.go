@@ -3,6 +3,7 @@ package diagram
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 
 	"github.com/fredericrous/cluster-vision/internal/model"
 	"github.com/fredericrous/cluster-vision/internal/versions"
@@ -17,8 +18,10 @@ type VersionRow struct {
 	Version   string `json:"version"`
 	Latest    string `json:"latest"`
 	Outdated  bool   `json:"outdated"`
-	RepoType  string `json:"repoType"`
-	RepoURL   string `json:"repoUrl"`
+	RepoType     string `json:"repoType"`
+	RepoURL      string `json:"repoUrl"`
+	SecurityRisk string `json:"securityRisk"` // "critical" | "warning" | "none" | ""
+	VulnSummary  string `json:"vulnSummary"`  // human-readable tooltip
 }
 
 // GenerateVersions produces a table of deployed HelmRelease versions.
@@ -36,6 +39,29 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 	repoByKey := make(map[string]model.HelmRepositoryInfo)
 	for _, r := range data.HelmRepositories {
 		repoByKey[r.Cluster+"/"+r.Namespace+"/"+r.Name] = r
+	}
+
+	// Build vulnerability lookup: imageRef → ImageVuln
+	vulnByImage := make(map[string]model.ImageVuln)
+	for _, v := range data.ImageVulns {
+		vulnByImage[v.Image] = v
+	}
+
+	// Build release → images mapping via workload labels
+	// key: "cluster/namespace/releaseName" → set of image refs
+	releaseImages := make(map[string]map[string]bool)
+	for _, w := range data.Workloads {
+		relName := w.Labels["app.kubernetes.io/instance"]
+		if relName == "" {
+			continue
+		}
+		key := w.Cluster + "/" + w.Namespace + "/" + relName
+		if releaseImages[key] == nil {
+			releaseImages[key] = make(map[string]bool)
+		}
+		for _, img := range w.Images {
+			releaseImages[key][img] = true
+		}
 	}
 
 	// Sort releases by cluster, namespace, then name
@@ -85,16 +111,40 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 			version = "-"
 		}
 
+		// Aggregate security risk across all images in this release's workloads
+		secRisk := ""
+		vulnSum := ""
+		relKey := rel.Cluster + "/" + rel.Namespace + "/" + rel.Name
+		if images, ok := releaseImages[relKey]; ok {
+			worstRisk := ""
+			var summaryParts []string
+			for img := range images {
+				if v, ok := vulnByImage[img]; ok {
+					r, s := vulnRisk(v)
+					if worstRisk == "" || vulnRiskPriority(r) > vulnRiskPriority(worstRisk) {
+						worstRisk = r
+					}
+					if s != "" {
+						summaryParts = append(summaryParts, s)
+					}
+				}
+			}
+			secRisk = worstRisk
+			vulnSum = strings.Join(summaryParts, "; ")
+		}
+
 		rows = append(rows, VersionRow{
-			Cluster:   rel.Cluster,
-			Release:   rel.Name,
-			Namespace: rel.Namespace,
-			Chart:     rel.ChartName,
-			Version:   version,
-			Latest:    latest,
-			Outdated:  outdated,
-			RepoType:  repoType,
-			RepoURL:   repoURL,
+			Cluster:      rel.Cluster,
+			Release:      rel.Name,
+			Namespace:    rel.Namespace,
+			Chart:        rel.ChartName,
+			Version:      version,
+			Latest:       latest,
+			Outdated:     outdated,
+			RepoType:     repoType,
+			RepoURL:      repoURL,
+			SecurityRisk: secRisk,
+			VulnSummary:  vulnSum,
 		})
 	}
 
@@ -105,5 +155,19 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 		Title:   "Helm Charts",
 		Type:    "table",
 		Content: string(tableJSON),
+	}
+}
+
+// vulnRiskPriority returns a numeric priority for string risk levels (higher = worse).
+func vulnRiskPriority(risk string) int {
+	switch risk {
+	case "critical":
+		return 3
+	case "warning":
+		return 2
+	case "none":
+		return 1
+	default:
+		return 0
 	}
 }

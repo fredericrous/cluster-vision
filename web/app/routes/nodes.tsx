@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { Route } from "./+types/nodes";
 import { fetchDiagram } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
-import { DataTable, OutdatedBadge } from "../components/data-table";
+import { DataTable, OutdatedBadge, SecurityBadge } from "../components/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
 
 interface NodeRow {
@@ -28,6 +28,8 @@ interface NodeRow {
   gpu: string;
   osDisk: string;
   dataDisk: string;
+  securityRisk: string;
+  vulnSummary: string;
 }
 
 export function meta({}: Route.MetaArgs) {
@@ -70,6 +72,16 @@ const columns: ColumnDef<NodeRow, string>[] = [
       <OutdatedBadge
         value={row.original.latestKubelet || "-"}
         outdated={row.original.kubeletOutdated}
+      />
+    ),
+  },
+  {
+    accessorKey: "securityRisk",
+    header: "Security",
+    cell: ({ row }) => (
+      <SecurityBadge
+        risk={row.original.securityRisk}
+        summary={row.original.vulnSummary}
       />
     ),
   },

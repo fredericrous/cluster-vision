@@ -27,6 +27,17 @@ type ClusterData struct {
 	Services              []ServiceInfo
 	RBACBindings          []RBACBindingInfo
 	VeleroSchedules       []VeleroScheduleInfo
+	ImageVulns            []ImageVuln
+}
+
+// ImageVuln represents vulnerability counts for a container image from trivy-operator.
+type ImageVuln struct {
+	Image    string // "registry/repo:tag"
+	Cluster  string
+	Critical int
+	High     int
+	Medium   int
+	Low      int
 }
 
 // PodImageInfo represents a container image running in a pod.

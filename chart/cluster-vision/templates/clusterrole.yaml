@@ -51,4 +51,7 @@ rules:
   - apiGroups: ["source.toolkit.fluxcd.io"]
     resources: ["helmrepositories"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["aquasecurity.github.io"]
+    resources: ["vulnerabilityreports"]
+    verbs: ["get", "list", "watch"]
 {{- end }}

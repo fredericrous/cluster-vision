@@ -160,3 +160,31 @@ func boolIcon(v bool) string {
 	}
 	return "no"
 }
+
+// vulnRisk derives a security risk level and human-readable summary from vulnerability counts.
+func vulnRisk(v model.ImageVuln) (risk, summary string) {
+	if v.Critical > 0 || v.High > 0 {
+		risk = "critical"
+	} else if v.Medium > 0 || v.Low > 0 {
+		risk = "warning"
+	} else {
+		risk = "none"
+	}
+
+	var parts []string
+	if v.Critical > 0 {
+		parts = append(parts, fmt.Sprintf("%d critical", v.Critical))
+	}
+	if v.High > 0 {
+		parts = append(parts, fmt.Sprintf("%d high", v.High))
+	}
+	if v.Medium > 0 {
+		parts = append(parts, fmt.Sprintf("%d medium", v.Medium))
+	}
+	if v.Low > 0 {
+		parts = append(parts, fmt.Sprintf("%d low", v.Low))
+	}
+	summary = strings.Join(parts, ", ")
+
+	return risk, summary
+}

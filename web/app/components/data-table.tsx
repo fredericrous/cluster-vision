@@ -144,6 +144,16 @@ export function BooleanBadge({ value }: { value: string }) {
   return <>{value}</>;
 }
 
+export function SecurityBadge({ risk, summary }: { risk: string; summary: string }) {
+  if (risk === "critical")
+    return <span className={`${styles.badgeOutdated} ${styles.tooltip}`} data-tooltip={summary}>critical</span>;
+  if (risk === "warning")
+    return <span className={`${styles.badgeWarning} ${styles.tooltip}`} data-tooltip={summary}>warning</span>;
+  if (risk === "none")
+    return <span className={styles.badgeYes}>ok</span>;
+  return <>—</>;
+}
+
 export function OutdatedBadge({
   value,
   outdated,

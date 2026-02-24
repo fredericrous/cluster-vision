@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { Route } from "./+types/charts";
 import { fetchDiagram } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
-import { DataTable, OutdatedBadge } from "../components/data-table";
+import { DataTable, OutdatedBadge, SecurityBadge } from "../components/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
 
 interface VersionRow {
@@ -15,6 +15,8 @@ interface VersionRow {
   outdated: boolean;
   repoType: string;
   repoUrl: string;
+  securityRisk: string;
+  vulnSummary: string;
 }
 
 export function meta({}: Route.MetaArgs) {
@@ -38,6 +40,16 @@ const columns: ColumnDef<VersionRow, string>[] = [
       <OutdatedBadge
         value={row.original.latest}
         outdated={row.original.outdated}
+      />
+    ),
+  },
+  {
+    accessorKey: "securityRisk",
+    header: "Security",
+    cell: ({ row }) => (
+      <SecurityBadge
+        risk={row.original.securityRisk}
+        summary={row.original.vulnSummary}
       />
     ),
   },

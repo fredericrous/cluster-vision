@@ -138,6 +138,11 @@ func (p *KubernetesParser) ParseVeleroSchedules(ctx context.Context) []model.Vel
 	return p.parseVeleroSchedules(ctx)
 }
 
+// ParseVulnReports returns vulnerability data from trivy-operator VulnerabilityReports.
+func (p *KubernetesParser) ParseVulnReports(ctx context.Context) []model.ImageVuln {
+	return p.parseVulnReports(ctx)
+}
+
 // ParseAll queries all supported resources and returns cluster data.
 // All parse methods run concurrently via errgroup for faster collection.
 func (p *KubernetesParser) ParseAll(ctx context.Context) *model.ClusterData {
@@ -167,6 +172,7 @@ func (p *KubernetesParser) ParseAll(ctx context.Context) *model.ClusterData {
 	g.Go(func() error { data.Services = p.parseServices(gctx); return nil })
 	g.Go(func() error { data.RBACBindings = p.parseRBAC(gctx); return nil })
 	g.Go(func() error { data.VeleroSchedules = p.parseVeleroSchedules(gctx); return nil })
+	g.Go(func() error { data.ImageVulns = p.parseVulnReports(gctx); return nil })
 
 	g.Wait()
 	return data
@@ -1370,6 +1376,107 @@ func (p *KubernetesParser) parseVeleroSchedules(ctx context.Context) []model.Vel
 		})
 	}
 	return result
+}
+
+func (p *KubernetesParser) parseVulnReports(ctx context.Context) []model.ImageVuln {
+	gvr := schema.GroupVersionResource{
+		Group:    "aquasecurity.github.io",
+		Version:  "v1alpha1",
+		Resource: "vulnerabilityreports",
+	}
+
+	list, err := p.dynamic.Resource(gvr).Namespace("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		slog.Debug("failed to list vulnerabilityreports (trivy-operator CRD may not exist)", "error", err)
+		return nil
+	}
+
+	// Merge multiple reports for the same image:tag (take max counts).
+	type vulnKey struct{ image, cluster string }
+	merged := make(map[vulnKey]*model.ImageVuln)
+
+	for _, item := range list.Items {
+		report, _ := item.Object["report"].(map[string]interface{})
+		if report == nil {
+			continue
+		}
+
+		// Build image ref from report.registry.server + report.artifact.repository + : + report.artifact.tag
+		registry, _ := report["registry"].(map[string]interface{})
+		artifact, _ := report["artifact"].(map[string]interface{})
+		if registry == nil || artifact == nil {
+			continue
+		}
+
+		server := strVal(registry, "server")
+		repository := strVal(artifact, "repository")
+		tag := strVal(artifact, "tag")
+		if repository == "" {
+			continue
+		}
+
+		imageRef := repository
+		if server != "" {
+			imageRef = server + "/" + repository
+		}
+		if tag != "" {
+			imageRef = imageRef + ":" + tag
+		}
+
+		// Extract summary counts
+		summary, _ := report["summary"].(map[string]interface{})
+		critical := intVal(summary, "criticalCount")
+		high := intVal(summary, "highCount")
+		medium := intVal(summary, "mediumCount")
+		low := intVal(summary, "lowCount")
+
+		key := vulnKey{image: imageRef, cluster: p.clusterName}
+		if existing, ok := merged[key]; ok {
+			// Take max counts across reports for the same image
+			if critical > existing.Critical {
+				existing.Critical = critical
+			}
+			if high > existing.High {
+				existing.High = high
+			}
+			if medium > existing.Medium {
+				existing.Medium = medium
+			}
+			if low > existing.Low {
+				existing.Low = low
+			}
+		} else {
+			merged[key] = &model.ImageVuln{
+				Image:    imageRef,
+				Cluster:  p.clusterName,
+				Critical: critical,
+				High:     high,
+				Medium:   medium,
+				Low:      low,
+			}
+		}
+	}
+
+	result := make([]model.ImageVuln, 0, len(merged))
+	for _, v := range merged {
+		result = append(result, *v)
+	}
+	return result
+}
+
+func intVal(m map[string]interface{}, key string) int {
+	if m == nil {
+		return 0
+	}
+	switch v := m[key].(type) {
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case int:
+		return v
+	}
+	return 0
 }
 
 // ptrInt32 dereferences an int32 pointer, returning 1 if nil (default replicas).

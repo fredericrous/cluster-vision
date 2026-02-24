@@ -17,8 +17,10 @@ type ImageRow struct {
 	Namespaces string `json:"namespaces"` // comma-separated unique namespaces
 	Pods       int    `json:"pods"`       // count of pods using this image:tag
 	Registry   string `json:"registry"`   // extracted registry hostname
-	Latest     string `json:"latest"`     // latest tag with same variant pattern
-	Outdated   bool   `json:"outdated"`   // true if latest != current tag
+	Latest       string `json:"latest"`        // latest tag with same variant pattern
+	Outdated     bool   `json:"outdated"`      // true if latest != current tag
+	SecurityRisk string `json:"securityRisk"`  // "critical" | "warning" | "none" | ""
+	VulnSummary  string `json:"vulnSummary"`   // human-readable tooltip
 }
 
 // imageKey uniquely identifies an image ref + container type.
@@ -43,6 +45,12 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 			Type:    "markdown",
 			Content: "*No pod data available.*",
 		}
+	}
+
+	// Build vulnerability lookup: imageRef → ImageVuln
+	vulnByImage := make(map[string]model.ImageVuln)
+	for _, v := range data.ImageVulns {
+		vulnByImage[v.Image] = v
 	}
 
 	agg := make(map[imageKey]*imageAgg)
@@ -86,15 +94,25 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 			}
 		}
 
+		// Security risk from trivy VulnerabilityReports
+		secRisk := ""
+		vulnSum := ""
+		imageRef := key.image + ":" + key.tag
+		if v, ok := vulnByImage[imageRef]; ok {
+			secRisk, vulnSum = vulnRisk(v)
+		}
+
 		rows = append(rows, ImageRow{
-			Image:      key.image,
-			Tag:        key.tag,
-			Type:       typ,
-			Namespaces: strings.Join(ns, ", "),
-			Pods:       len(a.pods),
-			Registry:   a.registry,
-			Latest:     latest,
-			Outdated:   outdated,
+			Image:        key.image,
+			Tag:          key.tag,
+			Type:         typ,
+			Namespaces:   strings.Join(ns, ", "),
+			Pods:         len(a.pods),
+			Registry:     a.registry,
+			Latest:       latest,
+			Outdated:     outdated,
+			SecurityRisk: secRisk,
+			VulnSummary:  vulnSum,
 		})
 	}
 

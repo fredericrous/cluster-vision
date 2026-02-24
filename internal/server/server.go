@@ -29,14 +29,15 @@ type Config struct {
 
 // Server serves the diagram API.
 type Server struct {
-	cfg          Config
-	k8sParsers   []*parser.KubernetesParser
-	checker      *versions.Checker
-	imageChecker *versions.ImageChecker
-	nodeChecker  *versions.NodeChecker
-	mu           sync.RWMutex
-	data         []model.DiagramResult
-	lastGen      time.Time
+	cfg             Config
+	k8sParsers      []*parser.KubernetesParser
+	checker         *versions.Checker
+	imageChecker    *versions.ImageChecker
+	nodeChecker     *versions.NodeChecker
+	securityChecker *versions.SecurityChecker
+	mu              sync.RWMutex
+	data            []model.DiagramResult
+	lastGen         time.Time
 }
 
 // New creates a new Server.
@@ -72,8 +73,9 @@ func New(cfg Config) (*Server, error) {
 	checker := versions.NewChecker(cfg.RefreshInterval, cfg.RegistryProxy)
 	imageChecker := versions.NewImageChecker()
 	nodeChecker := versions.NewNodeChecker()
+	securityChecker := versions.NewSecurityChecker()
 
-	return &Server{cfg: cfg, k8sParsers: parsers, checker: checker, imageChecker: imageChecker, nodeChecker: nodeChecker}, nil
+	return &Server{cfg: cfg, k8sParsers: parsers, checker: checker, imageChecker: imageChecker, nodeChecker: nodeChecker, securityChecker: securityChecker}, nil
 }
 
 // Start begins serving HTTP and starts the background refresh loop.
@@ -153,6 +155,7 @@ func (s *Server) refresh(ctx context.Context) {
 		clusterData.Services = append(clusterData.Services, secondary.Services...)
 		clusterData.RBACBindings = append(clusterData.RBACBindings, secondary.RBACBindings...)
 		clusterData.VeleroSchedules = append(clusterData.VeleroSchedules, secondary.VeleroSchedules...)
+		clusterData.ImageVulns = append(clusterData.ImageVulns, secondary.ImageVulns...)
 	}
 
 	// Sort namespaces and security policies deterministically
@@ -195,7 +198,7 @@ func (s *Server) refresh(ctx context.Context) {
 	diagrams = append(diagrams, diagram.GenerateSecurity(clusterData)...)
 	diagrams = append(diagrams, diagram.GenerateImages(clusterData, s.imageChecker))
 	diagrams = append(diagrams, diagram.GenerateVersions(clusterData, s.checker))
-	diagrams = append(diagrams, diagram.GenerateNodes(clusterData, s.nodeChecker))
+	diagrams = append(diagrams, diagram.GenerateNodes(clusterData, s.nodeChecker, s.securityChecker))
 	diagrams = append(diagrams,
 		diagram.GenerateWorkloads(clusterData),
 		diagram.GenerateStorage(clusterData),
@@ -254,7 +257,23 @@ func (s *Server) refresh(ctx context.Context) {
 	go func() {
 		s.nodeChecker.Check(clusterData.Nodes)
 
-		nodesResult := diagram.GenerateNodes(clusterData, s.nodeChecker)
+		nodesResult := diagram.GenerateNodes(clusterData, s.nodeChecker, s.securityChecker)
+		s.mu.Lock()
+		for i, d := range s.data {
+			if d.ID == "nodes" {
+				s.data[i] = nodesResult
+				break
+			}
+		}
+		s.mu.Unlock()
+	}()
+
+	// Check node security vulnerabilities via OSV.dev asynchronously
+	go func() {
+		queries := versions.NodeSecurityQueries(clusterData.Nodes)
+		s.securityChecker.Check(queries)
+
+		nodesResult := diagram.GenerateNodes(clusterData, s.nodeChecker, s.securityChecker)
 		s.mu.Lock()
 		for i, d := range s.data {
 			if d.ID == "nodes" {

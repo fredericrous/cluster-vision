@@ -31,10 +31,12 @@ type NodeRow struct {
 	Memory           string `json:"memory"`
 	Arch             string `json:"arch"`
 	Provider         string `json:"provider"` // e.g. "proxmox"
-	Distro           string `json:"distro"`   // K8s distribution, e.g. "Talos", "K3s"
+	Distro           string `json:"distro"`        // K8s distribution, e.g. "Talos", "K3s"
 	GPU              string `json:"gpu"`
-	OSDisk           string `json:"osDisk"`   // e.g. "32 GB"
-	DataDisk         string `json:"dataDisk"` // e.g. "100 GB"
+	OSDisk           string `json:"osDisk"`        // e.g. "32 GB"
+	DataDisk         string `json:"dataDisk"`      // e.g. "100 GB"
+	SecurityRisk     string `json:"securityRisk"`  // "critical" | "warning" | "none" | ""
+	VulnSummary      string `json:"vulnSummary"`   // human-readable tooltip
 }
 
 // formatDiskGB formats a disk size in GB for display, omitting zero values.
@@ -47,7 +49,7 @@ func formatDiskGB(gb int) string {
 
 // GenerateNodes produces a table of cluster nodes with OS and kubelet version info,
 // enriched with Terraform data and load-balancer entries.
-func GenerateNodes(data *model.ClusterData, checker *versions.NodeChecker) model.DiagramResult {
+func GenerateNodes(data *model.ClusterData, checker *versions.NodeChecker, secChecker *versions.SecurityChecker) model.DiagramResult {
 	if len(data.Nodes) == 0 && len(data.LoadBalancers) == 0 {
 		return model.DiagramResult{
 			ID:      "nodes",
@@ -142,6 +144,39 @@ func GenerateNodes(data *model.ClusterData, checker *versions.NodeChecker) model
 			}
 		}
 
+		// Security risk from OSV.dev
+		if secChecker != nil {
+			var worstRisk versions.SecurityRisk
+			var summaries []string
+
+			// Check distro vulnerabilities
+			if mod, ok := versions.KnownDistroModule(distro); ok && osVer != "" {
+				ver := "v" + strings.TrimPrefix(osVer, "v")
+				if r := secChecker.GetResult("Go", mod, ver); r.Risk != "" {
+					worstRisk = r.Risk
+					if r.Summary != "" {
+						summaries = append(summaries, "OS: "+r.Summary)
+					}
+				}
+			}
+
+			// Check kubelet vulnerabilities
+			if n.KubeletVersion != "" {
+				ver := strings.TrimPrefix(n.KubeletVersion, "v")
+				if r := secChecker.GetResult("Go", "k8s.io/kubernetes", ver); r.Risk != "" {
+					if worstRisk == "" || riskPriority(r.Risk) > riskPriority(worstRisk) {
+						worstRisk = r.Risk
+					}
+					if r.Summary != "" {
+						summaries = append(summaries, "Kubelet: "+r.Summary)
+					}
+				}
+			}
+
+			row.SecurityRisk = string(worstRisk)
+			row.VulnSummary = strings.Join(summaries, "; ")
+		}
+
 		rows = append(rows, row)
 	}
 
@@ -177,6 +212,20 @@ func GenerateNodes(data *model.ClusterData, checker *versions.NodeChecker) model
 		Title:   "Cluster Nodes",
 		Type:    "table",
 		Content: string(tableJSON),
+	}
+}
+
+// riskPriority returns a numeric priority for sorting security risks (higher = worse).
+func riskPriority(r versions.SecurityRisk) int {
+	switch r {
+	case versions.SecurityRiskCritical:
+		return 3
+	case versions.SecurityRiskWarning:
+		return 2
+	case versions.SecurityRiskNone:
+		return 1
+	default:
+		return 0
 	}
 }
 
