@@ -1,5 +1,5 @@
 import { Suspense, lazy, type ReactNode } from "react";
-import { ScrollArea } from "@base-ui/react/scroll-area";
+import { ScrollArea } from "@fredericrous/duro-design-system";
 import type { DiagramResult } from "../api.server";
 import styles from "./diagram-page.module.css";
 
@@ -45,32 +45,28 @@ export function DiagramPage({
       ) : (
         <div className={styles.content}>
           <ScrollArea.Root>
-            <ScrollArea.Viewport className={styles.viewport}>
-              <Suspense
-                fallback={<div className={styles.loading}>Rendering...</div>}
-              >
-                {children
-                  ? children
-                  : diagram.type === "mermaid"
-                    ? (
-                      <MermaidDiagram content={diagram.content} id={diagram.id} />
-                    )
-                    : (
-                      <MarkdownTable content={diagram.content} />
-                    )}
-              </Suspense>
+            <ScrollArea.Viewport>
+              <ScrollArea.Content>
+                <Suspense
+                  fallback={<div className={styles.loading}>Rendering...</div>}
+                >
+                  {children
+                    ? children
+                    : diagram.type === "mermaid"
+                      ? (
+                        <MermaidDiagram content={diagram.content} id={diagram.id} />
+                      )
+                      : (
+                        <MarkdownTable content={diagram.content} />
+                      )}
+                </Suspense>
+              </ScrollArea.Content>
             </ScrollArea.Viewport>
-            <ScrollArea.Scrollbar
-              orientation="horizontal"
-              className={styles.scrollbar}
-            >
-              <ScrollArea.Thumb className={styles.thumb} />
+            <ScrollArea.Scrollbar orientation="horizontal">
+              <ScrollArea.Thumb orientation="horizontal" />
             </ScrollArea.Scrollbar>
-            <ScrollArea.Scrollbar
-              orientation="vertical"
-              className={styles.scrollbar}
-            >
-              <ScrollArea.Thumb className={styles.thumb} />
+            <ScrollArea.Scrollbar orientation="vertical">
+              <ScrollArea.Thumb orientation="vertical" />
             </ScrollArea.Scrollbar>
           </ScrollArea.Root>
         </div>

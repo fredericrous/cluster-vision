@@ -25,26 +25,6 @@
   margin-top: 1.5rem;
 }
 
-.card {
-  display: block;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1.25rem;
-  transition: border-color 0.15s, transform 0.1s;
-}
-
-.card:hover {
-  border-color: var(--accent);
-  transform: translateY(-1px);
-}
-
-.cardTitle {
-  margin: 0 0 0.5rem;
-  font-size: 1rem;
-  font-weight: 600;
-}
-
 .cardDesc {
   margin: 0;
   font-size: 0.875rem;

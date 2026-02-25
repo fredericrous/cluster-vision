@@ -4,7 +4,7 @@ import { fetchDiagram } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
 import { DataTable, BooleanBadge } from "../components/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
-import tableStyles from "../components/data-table.module.css";
+import { Badge } from "@fredericrous/duro-design-system";
 
 interface CertificateRow {
   name: string;
@@ -29,13 +29,11 @@ export async function loader() {
 
 function ExpiryBadge({ days, level }: { days: number; level: string }) {
   if (days < 0) return <>-</>;
-  const cls =
-    level === "critical"
-      ? tableStyles.badgeOutdated
-      : level === "warning"
-        ? tableStyles.badgeWarning
-        : "";
-  return <span className={cls}>{days}d</span>;
+  if (level === "critical")
+    return <Badge variant="error" size="sm">{days}d</Badge>;
+  if (level === "warning")
+    return <Badge variant="warning" size="sm">{days}d</Badge>;
+  return <span>{days}d</span>;
 }
 
 const columns: ColumnDef<CertificateRow, string>[] = [

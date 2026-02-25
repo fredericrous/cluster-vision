@@ -4,6 +4,7 @@ import { fetchDiagram } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
 import { DataTable, OutdatedBadge, SecurityBadge } from "../components/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
+import { Tooltip } from "@fredericrous/duro-design-system";
 import tableStyles from "../components/data-table.module.css";
 
 interface ImageRow {
@@ -37,7 +38,13 @@ const columns: ColumnDef<ImageRow, string>[] = [
       const isSha = /^sha256:/.test(tag) || /^[0-9a-f]{40,}$/.test(tag);
       if (isSha) {
         const short = tag.replace(/^sha256:/, "").slice(0, 7);
-        return <span className={tableStyles.tooltip} data-tooltip={tag}>{short}</span>;
+        return (
+          <Tooltip.Root content={tag}>
+            <Tooltip.Trigger>
+              <span>{short}</span>
+            </Tooltip.Trigger>
+          </Tooltip.Root>
+        );
       }
       return <>{tag}</>;
     },

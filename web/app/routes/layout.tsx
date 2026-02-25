@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
-import { Tabs } from "@base-ui/react/tabs";
+import { Button, Tabs } from "@fredericrous/duro-design-system";
 import styles from "./layout.module.css";
 
 interface NavItem {
@@ -137,21 +137,19 @@ export default function AppLayout() {
         <div className={styles.navScroll}>
           <Tabs.Root
             value={activeTab}
-            onValueChange={(value) => navigate(value as string)}
+            onValueChange={(value) => navigate(value)}
+            orientation="vertical"
           >
-            <Tabs.List className={styles.tabList}>
+            <Tabs.List>
               {navGroups.map((group) => {
                 const isExpanded = expandedGroups.has(group.group);
-                const hasActive = group.items.some(
-                  (item) => item.value === activeTab
-                );
 
                 return (
                   <div key={group.group} className={styles.group}>
-                    <button
-                      className={`${styles.groupHeader} ${hasActive ? styles.groupHeaderActive : ""}`}
+                    <Button
+                      variant="link"
+                      size="small"
                       onClick={() => toggleGroup(group.group)}
-                      type="button"
                     >
                       <span
                         className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ""}`}
@@ -159,13 +157,12 @@ export default function AppLayout() {
                         &#9656;
                       </span>
                       {group.group}
-                    </button>
+                    </Button>
                     {isExpanded &&
                       group.items.map((item) => (
                         <Tabs.Tab
                           key={item.value}
                           value={item.value}
-                          className={styles.tab}
                         >
                           {item.label}
                         </Tabs.Tab>
@@ -173,7 +170,6 @@ export default function AppLayout() {
                   </div>
                 );
               })}
-              <Tabs.Indicator className={styles.indicator} />
             </Tabs.List>
           </Tabs.Root>
         </div>

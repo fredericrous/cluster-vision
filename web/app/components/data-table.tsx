@@ -9,6 +9,7 @@ import {
   type SortingState,
   type ColumnFiltersState,
 } from "@tanstack/react-table";
+import { Badge, Select, Table, Tooltip } from "@fredericrous/duro-design-system";
 import styles from "./data-table.module.css";
 
 declare module "@tanstack/react-table" {
@@ -71,20 +72,27 @@ export function DataTable<T>({
                 <label className={styles.filterLabel}>
                   {column.columnDef.header as string}
                 </label>
-                <select
-                  className={styles.filterSelect}
+                <Select.Root
                   value={currentValue}
-                  onChange={(e) =>
-                    column.setFilterValue(e.target.value || undefined)
+                  onValueChange={(v) =>
+                    column.setFilterValue(v || undefined)
                   }
                 >
-                  <option value="">All</option>
-                  {filterOptions[colId]?.map((val) => (
-                    <option key={val} value={val}>
-                      {val}
-                    </option>
-                  ))}
-                </select>
+                  <Select.Trigger>
+                    <Select.Value placeholder="All" />
+                    <Select.Icon />
+                  </Select.Trigger>
+                  <Select.Popup>
+                    <Select.Item value="">
+                      <Select.ItemText>All</Select.ItemText>
+                    </Select.Item>
+                    {filterOptions[colId]?.map((val) => (
+                      <Select.Item key={val} value={val}>
+                        <Select.ItemText>{val}</Select.ItemText>
+                      </Select.Item>
+                    ))}
+                  </Select.Popup>
+                </Select.Root>
               </div>
             );
           })}
@@ -94,63 +102,82 @@ export function DataTable<T>({
         </div>
       )}
 
-      <table className={styles.table}>
-        <thead>
+      <Table.Root columns={table.getHeaderGroups()[0]?.headers.length ?? 0} size="sm">
+        <Table.Header>
           {table.getHeaderGroups().map((headerGroup) => (
-            <tr key={headerGroup.id}>
+            <Table.Row key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
-                <th
-                  key={header.id}
-                  className={header.column.columnDef.meta?.className}
-                  onClick={header.column.getToggleSortingHandler()}
-                >
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext()
-                  )}
-                  <span className={styles.sortIndicator}>
-                    {{ asc: " \u25B2", desc: " \u25BC" }[
-                      header.column.getIsSorted() as string
-                    ] ?? ""}
+                <Table.HeaderCell key={header.id}>
+                  <span
+                    className={styles.sortableHeader}
+                    onClick={header.column.getToggleSortingHandler()}
+                  >
+                    {flexRender(
+                      header.column.columnDef.header,
+                      header.getContext()
+                    )}
+                    <span className={styles.sortIndicator}>
+                      {{ asc: " ▲", desc: " ▼" }[
+                        header.column.getIsSorted() as string
+                      ] ?? ""}
+                    </span>
                   </span>
-                </th>
+                </Table.HeaderCell>
               ))}
-            </tr>
+            </Table.Row>
           ))}
-        </thead>
-        <tbody>
+        </Table.Header>
+        <Table.Body>
           {table.getRowModel().rows.map((row) => (
-            <tr key={row.id}>
+            <Table.Row key={row.id}>
               {row.getVisibleCells().map((cell) => (
-                <td key={cell.id} className={cell.column.columnDef.meta?.className}>
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </td>
+                <Table.Cell key={cell.id}>
+                  {cell.column.columnDef.meta?.className ? (
+                    <span className={cell.column.columnDef.meta.className}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </span>
+                  ) : (
+                    flexRender(cell.column.columnDef.cell, cell.getContext())
+                  )}
+                </Table.Cell>
               ))}
-            </tr>
+            </Table.Row>
           ))}
-        </tbody>
-      </table>
+        </Table.Body>
+      </Table.Root>
     </div>
   );
 }
 
 export function BooleanBadge({ value }: { value: string }) {
   if (value === "yes") {
-    return <span className={styles.badgeYes}>yes</span>;
+    return <Badge variant="success" size="sm">yes</Badge>;
   }
   if (value === "no") {
-    return <span className={styles.badgeNo}>no</span>;
+    return <Badge variant="default" size="sm">no</Badge>;
   }
   return <>{value}</>;
 }
 
 export function SecurityBadge({ risk, summary }: { risk: string; summary: string }) {
   if (risk === "critical")
-    return <span className={`${styles.badgeOutdated} ${styles.tooltip}`} data-tooltip={summary}>critical</span>;
+    return (
+      <Tooltip.Root content={summary}>
+        <Tooltip.Trigger>
+          <Badge variant="error" size="sm">critical</Badge>
+        </Tooltip.Trigger>
+      </Tooltip.Root>
+    );
   if (risk === "warning")
-    return <span className={`${styles.badgeWarning} ${styles.tooltip}`} data-tooltip={summary}>warning</span>;
+    return (
+      <Tooltip.Root content={summary}>
+        <Tooltip.Trigger>
+          <Badge variant="warning" size="sm">warning</Badge>
+        </Tooltip.Trigger>
+      </Tooltip.Root>
+    );
   if (risk === "none")
-    return <span className={styles.badgeYes}>ok</span>;
+    return <Badge variant="success" size="sm">ok</Badge>;
   return <>—</>;
 }
 
@@ -162,7 +189,7 @@ export function OutdatedBadge({
   outdated: boolean;
 }) {
   if (outdated) {
-    return <span className={styles.badgeOutdated}>{value}</span>;
+    return <Badge variant="error" size="sm">{value}</Badge>;
   }
   return <>{value}</>;
 }

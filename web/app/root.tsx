@@ -7,6 +7,7 @@ import {
   ScrollRestoration,
 } from "react-router";
 
+import { ThemeProvider } from "@fredericrous/duro-design-system";
 import type { Route } from "./+types/root";
 import "./app.css";
 
@@ -33,7 +34,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
-        {children}
+        <ThemeProvider theme="dark">{children}</ThemeProvider>
         <ScrollRestoration />
         <Scripts />
       </body>

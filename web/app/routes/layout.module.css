@@ -33,13 +33,6 @@
   padding-bottom: 0.5rem;
 }
 
-.tabList {
-  display: flex;
-  flex-direction: column;
-  padding: 0.25rem 0;
-  gap: 0;
-}
-
 .group {
   display: flex;
   flex-direction: column;
@@ -80,35 +73,6 @@
   transform: rotate(90deg);
 }
 
-.tab {
-  all: unset;
-  display: block;
-  padding: 0.375rem 1rem 0.375rem 1.5rem;
-  color: var(--text-secondary);
-  font-size: 0.8125rem;
-  cursor: pointer;
-  transition: color 0.15s, background 0.15s;
-  position: relative;
-}
-
-.tab:hover {
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
-}
-
-.tab[data-selected] {
-  color: var(--accent);
-  background: var(--accent-dim);
-}
-
-.indicator {
-  position: absolute;
-  right: 0;
-  width: 2px;
-  background: var(--accent);
-  transition: top 0.2s ease, height 0.2s ease;
-}
-
 .content {
   flex: 1;
   padding: 2rem;
@@ -134,13 +98,6 @@
     overflow-x: auto;
   }
 
-  .tabList {
-    flex-direction: row;
-    flex-wrap: wrap;
-    overflow-x: auto;
-    padding: 0;
-  }
-
   .group {
     flex-direction: row;
     flex-wrap: wrap;
@@ -150,19 +107,6 @@
   .groupHeader {
     margin-top: 0;
     padding: 0.375rem 0.5rem;
-  }
-
-  .tab {
-    white-space: nowrap;
-    padding: 0.375rem 0.75rem;
-  }
-
-  .indicator {
-    right: auto;
-    bottom: 0;
-    left: 0;
-    width: auto;
-    height: 2px;
   }
 
   .content {

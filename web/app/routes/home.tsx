@@ -1,5 +1,6 @@
 import type { Route } from "./+types/home";
 import { fetchDiagrams } from "../api.server";
+import { Card } from "@fredericrous/duro-design-system";
 import { Separator } from "@base-ui/react/separator";
 import { Link } from "react-router";
 import styles from "./home.module.css";
@@ -160,9 +161,10 @@ export default function Home({ loaderData }: Route.ComponentProps) {
       <Separator />
       <div className={styles.grid}>
         {cards.map((card) => (
-          <Link to={card.to} key={card.id} className={styles.card}>
-            <h3 className={styles.cardTitle}>{card.title}</h3>
-            <p className={styles.cardDesc}>{card.description}</p>
+          <Link to={card.to} key={card.id} style={{ textDecoration: "none" }}>
+            <Card variant="interactive" header={card.title}>
+              <p className={styles.cardDesc}>{card.description}</p>
+            </Card>
           </Link>
         ))}
       </div>
