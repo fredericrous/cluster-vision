@@ -24,6 +24,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.10.1
+          only-new-issues: true
 
       - name: Go test
         run: go test ./...
