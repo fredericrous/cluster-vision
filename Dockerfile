@@ -16,8 +16,11 @@ FROM node:22-alpine AS web-builder
 
 WORKDIR /app
 
-COPY web/package.json web/package-lock.json ./
-RUN npm ci
+ARG NPM_TOKEN
+COPY web/package.json web/package-lock.json web/.npmrc ./
+RUN echo "//npm.pkg.github.com/:_authToken=${NPM_TOKEN}" >> .npmrc && \
+    npm ci && \
+    sed -i '/_authToken/d' .npmrc
 
 COPY web/ .
 RUN npm run build

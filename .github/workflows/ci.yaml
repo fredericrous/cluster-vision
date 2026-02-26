@@ -35,6 +35,8 @@ jobs:
   web:
     name: Web Build & Typecheck
     runs-on: ubuntu-latest
+    permissions:
+      packages: read
     defaults:
       run:
         working-directory: web
@@ -48,9 +50,12 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
+          registry-url: https://npm.pkg.github.com
 
       - name: Install dependencies
         run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Typecheck
         run: npm run typecheck
