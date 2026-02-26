@@ -30,18 +30,6 @@ func GenerateConfigs(data *model.ClusterData) model.DiagramResult {
 		}
 	}
 
-	// Build cross-reference from workload pod specs
-	// We match on namespace + config name from workload envFrom/volumes
-	// Since we only have workload-level data, we tag configs that share namespace with workloads
-	// referencing them by name (best-effort without pod spec deep inspection)
-	type configKey struct {
-		namespace, name, kind string
-	}
-	refs := make(map[configKey][]string)
-	// Note: full cross-referencing would require pod spec inspection.
-	// For now, leave ReferencedBy empty — it can be populated when pod spec data is available.
-	_ = refs
-
 	var rows []ConfigRow
 	for _, c := range data.Configs {
 		rows = append(rows, ConfigRow{

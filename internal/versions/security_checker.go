@@ -187,7 +187,7 @@ func (sc *SecurityChecker) Check(queries []SecurityQuery) {
 		slog.Warn("security check: request failed", "error", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		slog.Warn("security check: OSV API returned non-200", "status", resp.StatusCode)

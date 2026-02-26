@@ -267,7 +267,7 @@ func (ic *ImageChecker) fetchWithAuth(reqURL, registryHost string) (body []byte,
 			return nil, "", fmt.Errorf("fetching %s: %w", reqURL, err)
 		}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		return nil, "", fmt.Errorf("429 rate limited")
@@ -294,7 +294,7 @@ func (ic *ImageChecker) fetchWithAuth(reqURL, registryHost string) (body []byte,
 		if doErr != nil {
 			return nil, "", fmt.Errorf("authenticated request: %w", doErr)
 		}
-		defer resp2.Body.Close()
+		defer func() { _ = resp2.Body.Close() }()
 
 		if resp2.StatusCode != http.StatusOK {
 			return nil, "", fmt.Errorf("registry returned %d after auth", resp2.StatusCode)
@@ -340,7 +340,7 @@ func (ic *ImageChecker) getToken(challenge string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("fetching token from %s: %w", u.String(), err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("token endpoint returned %d", resp.StatusCode)

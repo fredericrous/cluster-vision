@@ -92,12 +92,13 @@ func parseProxmoxTelmate(res tfResource) []model.TerraformNode {
 
 		// Disk sizes — telmate stores disks in a list
 		if disks, ok := a["disk"].([]interface{}); ok {
-			for i, d := range disks {
+			for _, d := range disks {
 				if dm, ok := d.(map[string]interface{}); ok {
 					size := intAttr(dm, "size")
-					if i == 0 {
+					switch {
+					case node.OSDiskGB == 0:
 						node.OSDiskGB = size
-					} else if i == 1 {
+					case node.DataDiskGB == 0:
 						node.DataDiskGB = size
 					}
 				}
@@ -173,12 +174,13 @@ func parseProxmoxBPG(res tfResource) []model.TerraformNode {
 
 		// Disks
 		if disks, ok := a["disk"].([]interface{}); ok {
-			for i, d := range disks {
+			for _, d := range disks {
 				if dm, ok := d.(map[string]interface{}); ok {
 					size := intAttr(dm, "size")
-					if i == 0 {
+					switch {
+					case node.OSDiskGB == 0:
 						node.OSDiskGB = size
-					} else if i == 1 {
+					case node.DataDiskGB == 0:
 						node.DataDiskGB = size
 					}
 				}
@@ -217,7 +219,7 @@ func intAttr(m map[string]interface{}, key string) int {
 		return int(n)
 	case string:
 		var n int
-		fmt.Sscanf(v, "%d", &n)
+		_, _ = fmt.Sscanf(v, "%d", &n)
 		return n
 	}
 	return 0

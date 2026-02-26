@@ -174,7 +174,9 @@ func (p *KubernetesParser) ParseAll(ctx context.Context) *model.ClusterData {
 	g.Go(func() error { data.VeleroSchedules = p.parseVeleroSchedules(gctx); return nil })
 	g.Go(func() error { data.ImageVulns = p.parseVulnReports(gctx); return nil })
 
-	g.Wait()
+	if err := g.Wait(); err != nil {
+		slog.Warn("error during parallel parse", "error", err)
+	}
 	return data
 }
 
@@ -727,11 +729,6 @@ func (p *KubernetesParser) parsePods(ctx context.Context) []model.PodImageInfo {
 	if err != nil {
 		slog.Warn("failed to list pods", "error", err)
 		return nil
-	}
-
-	// Build imageID lookup from container statuses
-	type statusKey struct {
-		podNS, podName, container string
 	}
 
 	var result []model.PodImageInfo

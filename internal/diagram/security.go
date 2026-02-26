@@ -131,12 +131,12 @@ func GenerateSecurity(data *model.ClusterData) []model.DiagramResult {
 	// Coverage pie chart
 	var b strings.Builder
 	b.WriteString("pie title Security Coverage\n")
-	b.WriteString(fmt.Sprintf("  \"Ingress\" : %d\n", ingressCount))
-	b.WriteString(fmt.Sprintf("  \"Istio Ambient\" : %d\n", ambientCount))
-	b.WriteString(fmt.Sprintf("  \"Velero Backup\" : %d\n", backupCount))
-	b.WriteString(fmt.Sprintf("  \"Ext Auth\" : %d\n", authCount))
-	b.WriteString(fmt.Sprintf("  \"mTLS Mesh\" : %d\n", mtlsCount))
-	b.WriteString(fmt.Sprintf("  \"mTLS Client\" : %d\n", clientMTLSCount))
+	fmt.Fprintf(&b, "  \"Ingress\" : %d\n", ingressCount)
+	fmt.Fprintf(&b, "  \"Istio Ambient\" : %d\n", ambientCount)
+	fmt.Fprintf(&b, "  \"Velero Backup\" : %d\n", backupCount)
+	fmt.Fprintf(&b, "  \"Ext Auth\" : %d\n", authCount)
+	fmt.Fprintf(&b, "  \"mTLS Mesh\" : %d\n", mtlsCount)
+	fmt.Fprintf(&b, "  \"mTLS Client\" : %d\n", clientMTLSCount)
 
 	return []model.DiagramResult{
 		{

@@ -189,7 +189,7 @@ func (c *Checker) fetchWithAuthPaginated(url string) (body []byte, nextURL strin
 	if err != nil {
 		return nil, "", fmt.Errorf("fetching %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// If 401, try token auth
 	if resp.StatusCode == http.StatusUnauthorized {
@@ -221,7 +221,7 @@ func (c *Checker) fetchWithAuthPaginated(url string) (body []byte, nextURL strin
 		if err != nil {
 			return nil, "", fmt.Errorf("authenticated request: %w", err)
 		}
-		defer resp2.Body.Close()
+		defer func() { _ = resp2.Body.Close() }()
 
 		if resp2.StatusCode != http.StatusOK {
 			return nil, "", fmt.Errorf("registry returned %d after auth", resp2.StatusCode)
@@ -302,7 +302,7 @@ func (c *Checker) getToken(challenge string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("fetching token from %s: %w", tokenURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("token endpoint returned %d", resp.StatusCode)
@@ -352,7 +352,7 @@ func (c *Checker) checkHTTP(repoURL, chartName string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("fetching index: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("index returned %d", resp.StatusCode)

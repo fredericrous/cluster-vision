@@ -20,8 +20,8 @@ func GenerateNetwork(data *model.ClusterData) model.DiagramResult {
 		}
 	}
 
-	b.WriteString("graph LR\n")
-	b.WriteString("  internet((\"Internet\"))\n")
+	fmt.Fprint(&b, "graph LR\n")
+	fmt.Fprint(&b, "  internet((\"Internet\"))\n")
 
 	// One subgraph per gateway
 	for gi, gw := range data.Gateways {
@@ -30,8 +30,8 @@ func GenerateNetwork(data *model.ClusterData) model.DiagramResult {
 		if clusterLabel == "" {
 			clusterLabel = data.PrimaryCluster
 		}
-		b.WriteString(fmt.Sprintf("  %s{\"%s<br/>%s<br/>%s\"}\n", gwID, gw.Name, gw.Namespace, clusterLabel))
-		b.WriteString(fmt.Sprintf("  internet -->|HTTPS| %s\n\n", gwID))
+		fmt.Fprintf(&b, "  %s{\"%s<br/>%s<br/>%s\"}\n", gwID, gw.Name, gw.Namespace, clusterLabel)
+		fmt.Fprintf(&b, "  internet -->|HTTPS| %s\n\n", gwID)
 
 		// Build hostname → listener mapping
 		hostToListener := make(map[string]string)
@@ -73,20 +73,20 @@ func GenerateNetwork(data *model.ClusterData) model.DiagramResult {
 				routeCluster = data.PrimaryCluster
 			}
 
-			label := r.Name
+			var label string
 			if hostname != "" {
 				label = fmt.Sprintf("%s<br/><small>%s</small><br/><small>%s</small>", r.Name, hostname, routeCluster)
 			} else {
 				label = fmt.Sprintf("%s<br/><small>%s</small>", r.Name, routeCluster)
 			}
 
-			b.WriteString(fmt.Sprintf("  %s[\"%s\"]\n", routeID, label))
+			fmt.Fprintf(&b, "  %s[\"%s\"]\n", routeID, label)
 
 			edgeLabel := hostname
 			if edgeLabel == "" {
 				edgeLabel = r.Name
 			}
-			b.WriteString(fmt.Sprintf("  %s -->|\"%s\"| %s\n", gwID, edgeLabel, routeID))
+			fmt.Fprintf(&b, "  %s -->|\"%s\"| %s\n", gwID, edgeLabel, routeID)
 		}
 	}
 
@@ -99,7 +99,7 @@ func GenerateNetwork(data *model.ClusterData) model.DiagramResult {
 				hostname = r.Hostnames[0]
 			}
 			label := fmt.Sprintf("%s<br/><small>%s</small>", r.Name, hostname)
-			b.WriteString(fmt.Sprintf("  %s[\"%s\"]\n", routeID, label))
+			fmt.Fprintf(&b, "  %s[\"%s\"]\n", routeID, label)
 		}
 	}
 
