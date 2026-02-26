@@ -4,6 +4,7 @@ import { fetchDiagram } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
 import { DataTable } from "../components/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
+import tableStyles from "../components/data-table.module.css";
 
 interface WorkloadRow {
   name: string;
@@ -31,7 +32,7 @@ const columns: ColumnDef<WorkloadRow, string>[] = [
   { accessorKey: "kind", header: "Kind" },
   { accessorKey: "replicas", header: "Replicas" },
   { accessorKey: "updateStrategy", header: "Strategy" },
-  { accessorKey: "images", header: "Images" },
+  { accessorKey: "images", header: "Images", meta: { className: tableStyles.truncateCell } },
   { accessorKey: "age", header: "Created" },
 ];
 

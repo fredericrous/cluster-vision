@@ -73,6 +73,27 @@
   transform: rotate(90deg);
 }
 
+.navItem {
+  all: unset;
+  display: block;
+  padding: 0.3rem 0.75rem 0.3rem 1.5rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 0.25rem;
+  transition: color 0.15s, background 0.15s;
+}
+
+.navItem:hover {
+  color: var(--text-primary);
+  background: var(--accent-dim);
+}
+
+.navItemActive {
+  color: var(--accent);
+  font-weight: 500;
+}
+
 .content {
   flex: 1;
   padding: 2rem;

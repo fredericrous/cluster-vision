@@ -34,6 +34,13 @@
   word-break: break-word;
 }
 
+.truncateCell {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sortIndicator {
   margin-left: 0.25rem;
   font-size: 0.625rem;
@@ -42,4 +49,30 @@
 .rowCount {
   font-size: 0.75rem;
   color: var(--text-muted);
+}
+
+.wrapper table {
+  width: 100%;
+  table-layout: auto;
+  border-collapse: collapse;
+}
+
+.wrapper th,
+.wrapper td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.wrapper th {
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.wrapper tbody tr:hover {
+  background: var(--accent-dim);
 }

@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
-import { Button, Tabs } from "@fredericrous/duro-design-system";
 import styles from "./layout.module.css";
 
 interface NavItem {
@@ -135,43 +134,34 @@ export default function AppLayout() {
           <h2 className={styles.title}>Cluster Vision</h2>
         </div>
         <div className={styles.navScroll}>
-          <Tabs.Root
-            value={activeTab}
-            onValueChange={(value) => navigate(value)}
-            orientation="vertical"
-          >
-            <Tabs.List>
-              {navGroups.map((group) => {
-                const isExpanded = expandedGroups.has(group.group);
-
-                return (
-                  <div key={group.group} className={styles.group}>
-                    <Button
-                      variant="link"
-                      size="small"
-                      onClick={() => toggleGroup(group.group)}
+          {navGroups.map((group) => {
+            const isExpanded = expandedGroups.has(group.group);
+            return (
+              <div key={group.group} className={styles.group}>
+                <button
+                  className={`${styles.groupHeader} ${isExpanded ? styles.groupHeaderActive : ""}`}
+                  onClick={() => toggleGroup(group.group)}
+                >
+                  <span
+                    className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ""}`}
+                  >
+                    &#9656;
+                  </span>
+                  {group.group}
+                </button>
+                {isExpanded &&
+                  group.items.map((item) => (
+                    <button
+                      key={item.value}
+                      className={`${styles.navItem} ${activeTab === item.value ? styles.navItemActive : ""}`}
+                      onClick={() => navigate(item.value)}
                     >
-                      <span
-                        className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ""}`}
-                      >
-                        &#9656;
-                      </span>
-                      {group.group}
-                    </Button>
-                    {isExpanded &&
-                      group.items.map((item) => (
-                        <Tabs.Tab
-                          key={item.value}
-                          value={item.value}
-                        >
-                          {item.label}
-                        </Tabs.Tab>
-                      ))}
-                  </div>
-                );
-              })}
-            </Tabs.List>
-          </Tabs.Root>
+                      {item.label}
+                    </button>
+                  ))}
+              </div>
+            );
+          })}
         </div>
       </nav>
       <main className={styles.content}>
