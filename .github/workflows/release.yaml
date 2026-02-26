@@ -10,13 +10,8 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  ci:
-    name: CI
-    uses: ./.github/workflows/ci.yaml
-
   release:
     name: Release
-    needs: ci
     runs-on: ubuntu-latest
     permissions:
       contents: write
