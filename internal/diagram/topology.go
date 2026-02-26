@@ -45,7 +45,7 @@ func GenerateTopologySections(data *model.ClusterData) []model.DiagramResult {
 		for i, n := range extra {
 			id := fmt.Sprintf("ex%d", i)
 			label := fmt.Sprintf("%s<br/>%s / %s<br/>%s", n.Name, n.CPU, n.Memory, n.IP)
-			b.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", id, label))
+			fmt.Fprintf(&b, "    %s[\"%s\"]\n", id, label)
 		}
 		b.WriteString("  end\n")
 		results = append(results, model.DiagramResult{
@@ -62,7 +62,7 @@ func GenerateTopologySections(data *model.ClusterData) []model.DiagramResult {
 func generateTFSourceDiagram(id string, src model.InfraSource, data *model.ClusterData) model.DiagramResult {
 	var b strings.Builder
 	b.WriteString("graph TB\n")
-	b.WriteString(fmt.Sprintf("  subgraph cluster[\"%s\"]\n", src.Name))
+	fmt.Fprintf(&b, "  subgraph cluster[\"%s\"]\n", src.Name)
 	b.WriteString("    direction TB\n")
 
 	for i, node := range src.TerraformNodes {
@@ -100,7 +100,7 @@ func generateTFSourceDiagram(id string, src model.InfraSource, data *model.Clust
 			label += "<br/>" + node.IP
 		}
 
-		b.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", nodeID, label))
+		fmt.Fprintf(&b, "    %s[\"%s\"]\n", nodeID, label)
 	}
 
 	b.WriteString("  end\n")
@@ -117,7 +117,7 @@ func generateDockerComposeDiagram(id string, src model.InfraSource) model.Diagra
 	dc := src.DockerCompose
 	var b strings.Builder
 	b.WriteString("graph TB\n")
-	b.WriteString(fmt.Sprintf("  subgraph host[\"%s\"]\n", src.Name))
+	fmt.Fprintf(&b, "  subgraph host[\"%s\"]\n", src.Name)
 	b.WriteString("    direction TB\n")
 
 	for i, svc := range dc.Services {
@@ -151,7 +151,7 @@ func generateDockerComposeDiagram(id string, src model.InfraSource) model.Diagra
 			label += fmt.Sprintf("<br/>%d volume(s)", len(svc.Volumes))
 		}
 
-		b.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", svcID, label))
+		fmt.Fprintf(&b, "    %s[\"%s\"]\n", svcID, label)
 	}
 
 	b.WriteString("  end\n")
@@ -193,7 +193,7 @@ func generateK8sOnlyTopology(data *model.ClusterData) model.DiagramResult {
 				}
 			}
 
-			b.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", id, label))
+			fmt.Fprintf(&b, "    %s[\"%s\"]\n", id, label)
 		}
 
 		b.WriteString("  end\n")
@@ -258,11 +258,11 @@ func generateMeshTopology(data *model.ClusterData) *model.DiagramResult {
 		if localName == "" {
 			localName = "Local"
 		}
-		b.WriteString(fmt.Sprintf("  subgraph local[\"%s\"]\n", localName))
+		fmt.Fprintf(&b, "  subgraph local[\"%s\"]\n", localName)
 		for i, gw := range data.EastWestGateways {
 			gwID := fmt.Sprintf("ewgw_l%d", i)
 			label := fmt.Sprintf("East-West Gateway<br/>%s:%d", gw.IP, gw.Port)
-			b.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", gwID, label))
+			fmt.Fprintf(&b, "    %s[\"%s\"]\n", gwID, label)
 		}
 		b.WriteString("  end\n")
 	}
@@ -276,9 +276,9 @@ func generateMeshTopology(data *model.ClusterData) *model.DiagramResult {
 		gwID := fmt.Sprintf("ewgw_r%d", remoteIdx)
 		remoteGwIDs[network] = gwID
 
-		b.WriteString(fmt.Sprintf("  subgraph %s[\"%s\"]\n", subID, remoteName))
+		fmt.Fprintf(&b, "  subgraph %s[\"%s\"]\n", subID, remoteName)
 		label := fmt.Sprintf("East-West Gateway<br/>%s:15443", ip)
-		b.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", gwID, label))
+		fmt.Fprintf(&b, "    %s[\"%s\"]\n", gwID, label)
 		b.WriteString("  end\n")
 		remoteIdx++
 	}
@@ -286,7 +286,7 @@ func generateMeshTopology(data *model.ClusterData) *model.DiagramResult {
 	// mTLS tunnel links between local and remote gateways
 	if hasLocalGW {
 		for _, remoteGwID := range remoteGwIDs {
-			b.WriteString(fmt.Sprintf("  ewgw_l0 <-->|\"mTLS tunnel<br/>port 15443\"| %s\n", remoteGwID))
+			fmt.Fprintf(&b, "  ewgw_l0 <-->|\"mTLS tunnel<br/>port 15443\"| %s\n", remoteGwID)
 		}
 	}
 
@@ -296,7 +296,7 @@ func generateMeshTopology(data *model.ClusterData) *model.DiagramResult {
 		for i, se := range crossCluster {
 			seID := fmt.Sprintf("se%d", i)
 			host := strings.Join(se.Hosts, ", ")
-			b.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", seID, host))
+			fmt.Fprintf(&b, "    %s[\"%s\"]\n", seID, host)
 		}
 		b.WriteString("  end\n")
 
@@ -304,10 +304,10 @@ func generateMeshTopology(data *model.ClusterData) *model.DiagramResult {
 		for i, se := range crossCluster {
 			seID := fmt.Sprintf("se%d", i)
 			if hasLocalGW {
-				b.WriteString(fmt.Sprintf("  ewgw_l0 --> %s\n", seID))
+				fmt.Fprintf(&b, "  ewgw_l0 --> %s\n", seID)
 			}
 			if rgw, ok := remoteGwIDs[se.Network]; ok {
-				b.WriteString(fmt.Sprintf("  %s --> %s\n", seID, rgw))
+				fmt.Fprintf(&b, "  %s --> %s\n", seID, rgw)
 			}
 		}
 	}
