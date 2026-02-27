@@ -6,7 +6,9 @@
     "build": "react-router build",
     "dev": "react-router dev",
     "start": "react-router-serve ./build/server/index.js",
-    "typecheck": "react-router typegen && tsc"
+    "typecheck": "react-router typegen && tsc",
+    "test": "vitest",
+    "test:run": "vitest run"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",
@@ -16,7 +18,9 @@
     "@react-router/node": "7.12.0",
     "@react-router/serve": "7.12.0",
     "@tanstack/react-table": "^8.21.3",
+    "@types/d3-hierarchy": "^3.1.7",
     "@xyflow/react": "^12.10.0",
+    "d3-hierarchy": "^3.1.2",
     "isbot": "^5.1.31",
     "mermaid": "^11.12.2",
     "react": "^19.2.4",
@@ -26,11 +30,18 @@
   },
   "devDependencies": {
     "@react-router/dev": "7.12.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "happy-dom": "^20.7.0",
+    "msw": "^2.12.10",
     "typescript": "^5.9.2",
     "vite": "^7.1.7",
-    "vite-tsconfig-paths": "^5.1.4"
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^4.0.18"
   }
 }
