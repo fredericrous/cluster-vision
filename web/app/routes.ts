@@ -28,5 +28,17 @@ export default [
     route("rbac", "routes/rbac.tsx"),
     route("labels", "routes/labels.tsx"),
     route("velero", "routes/velero.tsx"),
+    // EAM routes
+    route("eam/landscape", "routes/eam/landscape.tsx"),
+    route("eam/roadmap", "routes/eam/roadmap.tsx"),
+    route("eam/circle-map", "routes/eam/circle-map.tsx"),
+    route("eam/graph", "routes/eam/dependency-graph.tsx"),
+    route("eam/applications", "routes/eam/applications.tsx"),
+    route("eam/applications/new", "routes/eam/application-new.tsx"),
+    route("eam/applications/:id", "routes/eam/fact-sheet.tsx"),
+    route("eam/applications/:id/edit", "routes/eam/application-edit.tsx"),
+    route("eam/components", "routes/eam/components.tsx"),
+    route("eam/capabilities", "routes/eam/capabilities.tsx"),
+    route("eam/sync", "routes/eam/sync.tsx"),
   ]),
 ] satisfies RouteConfig;

@@ -37,6 +37,10 @@ spec:
             - name: DATA_SOURCES
               value: {{ include "cluster-vision.dataSourcesJSON" . | quote }}
             {{- end }}
+          {{- if .Values.envFrom }}
+          envFrom:
+            {{- toYaml .Values.envFrom | nindent 12 }}
+          {{- end }}
           ports:
             - name: web
               containerPort: {{ .Values.web.port }}

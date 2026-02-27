@@ -1,0 +1,16 @@
+DROP TABLE IF EXISTS sync_logs;
+DROP TABLE IF EXISTS version_history;
+DROP TABLE IF EXISTS k8s_sources;
+DROP TABLE IF EXISTS app_capabilities;
+DROP TABLE IF EXISTS app_components;
+DROP TABLE IF EXISTS app_dependencies;
+DROP TABLE IF EXISTS business_capabilities;
+DROP TABLE IF EXISTS it_components;
+DROP TABLE IF EXISTS applications;
+DROP TYPE IF EXISTS data_source;
+DROP TYPE IF EXISTS time_category;
+DROP TYPE IF EXISTS it_component_type;
+DROP TYPE IF EXISTS lifecycle_phase;
+DROP TYPE IF EXISTS risk_level;
+DROP TYPE IF EXISTS criticality;
+DROP TYPE IF EXISTS app_status;

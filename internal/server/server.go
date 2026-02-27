@@ -11,9 +11,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fredericrous/cluster-vision/internal/agent"
 	"github.com/fredericrous/cluster-vision/internal/diagram"
+	"github.com/fredericrous/cluster-vision/internal/discovery"
+	"github.com/fredericrous/cluster-vision/internal/eam"
 	"github.com/fredericrous/cluster-vision/internal/model"
 	"github.com/fredericrous/cluster-vision/internal/parser"
+	"github.com/fredericrous/cluster-vision/internal/store"
 	"github.com/fredericrous/cluster-vision/internal/versions"
 )
 
@@ -25,6 +29,11 @@ type Config struct {
 	DataSources     []model.DataSource
 	RefreshInterval time.Duration
 	RegistryProxy   string // host:port of local OCI proxy (e.g. Zot) for upstream resolution
+	// EAM (all optional)
+	DatabaseURL  string // enables EAM features
+	LiteLLMURL   string // enables AI enrichment
+	LiteLLMKey   string // API key for LiteLLM
+	LiteLLMModel string // default model
 }
 
 // Server serves the diagram API.
@@ -38,6 +47,12 @@ type Server struct {
 	mu              sync.RWMutex
 	data            []model.DiagramResult
 	lastGen         time.Time
+	// EAM (nil when DATABASE_URL not set)
+	db          *store.DB
+	syncer      *discovery.Syncer
+	eamHandler  *eam.Handler
+	enricher    *agent.Enricher
+	clusterData *model.ClusterData // cached for EAM sync-on-demand
 }
 
 // New creates a new Server.
@@ -75,7 +90,29 @@ func New(cfg Config) (*Server, error) {
 	nodeChecker := versions.NewNodeChecker()
 	securityChecker := versions.NewSecurityChecker()
 
-	return &Server{cfg: cfg, k8sParsers: parsers, checker: checker, imageChecker: imageChecker, nodeChecker: nodeChecker, securityChecker: securityChecker}, nil
+	s := &Server{cfg: cfg, k8sParsers: parsers, checker: checker, imageChecker: imageChecker, nodeChecker: nodeChecker, securityChecker: securityChecker}
+
+	// Optional EAM database
+	if cfg.DatabaseURL != "" {
+		db, err := store.New(context.Background(), cfg.DatabaseURL)
+		if err != nil {
+			slog.Error("failed to connect EAM database — EAM features disabled", "error", err)
+		} else {
+			s.db = db
+			s.syncer = discovery.NewSyncer(db)
+			s.eamHandler = eam.NewHandler(db)
+			slog.Info("EAM features enabled")
+
+			// Optional AI enrichment
+			if cfg.LiteLLMURL != "" {
+				client := agent.NewClient(cfg.LiteLLMURL, cfg.LiteLLMKey, cfg.LiteLLMModel)
+				s.enricher = agent.NewEnricher(client, db)
+				slog.Info("AI enrichment enabled", "model", cfg.LiteLLMModel)
+			}
+		}
+	}
+
+	return s, nil
 }
 
 // Start begins serving HTTP and starts the background refresh loop.
@@ -89,6 +126,19 @@ func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/diagrams", s.handleDiagrams)
 	mux.HandleFunc("GET /api/health", s.handleHealth)
+	mux.HandleFunc("GET /api/config", s.handleConfig)
+
+	// EAM routes (only if DB connected)
+	if s.eamHandler != nil {
+		s.eamHandler.RegisterRoutes(mux)
+		// Manual sync trigger
+		mux.HandleFunc("POST /api/eam/sync/trigger", s.handleSyncTrigger)
+		mux.HandleFunc("GET /api/eam/sync/logs", s.handleSyncLogs)
+		// AI enrichment (only if enricher configured)
+		if s.enricher != nil {
+			mux.HandleFunc("POST /api/eam/enrich", s.handleEnrich)
+		}
+	}
 
 	addr := fmt.Sprintf(":%d", s.cfg.Port)
 	slog.Info("starting server", "addr", addr, "refresh", s.cfg.RefreshInterval, "dataSources", len(s.cfg.DataSources))
@@ -97,6 +147,9 @@ func (s *Server) Start(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
+		if s.db != nil {
+			s.db.Close()
+		}
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
@@ -218,9 +271,22 @@ func (s *Server) refresh(ctx context.Context) {
 	s.mu.Lock()
 	s.data = diagrams
 	s.lastGen = time.Now()
+	s.clusterData = clusterData
 	s.mu.Unlock()
 
 	slog.Info("refresh complete", "duration", time.Since(start))
+
+	// Run EAM discovery sync asynchronously, then AI enrichment for new apps
+	if s.syncer != nil {
+		go func() {
+			result := s.syncer.Sync(ctx, clusterData)
+			if s.enricher != nil && result.AppsCreated > 0 {
+				if err := s.enricher.EnrichNew(ctx); err != nil {
+					slog.Error("ai enrichment after refresh failed", "error", err)
+				}
+			}
+		}()
+	}
 
 	// Check latest versions asynchronously — updates arrive on next page load
 	go func() {
@@ -362,10 +428,70 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	resp := struct {
+		EAM bool `json:"eam"`
+		AI  bool `json:"ai"`
+	}{
+		EAM: s.db != nil,
+		AI:  s.cfg.LiteLLMURL != "",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) handleSyncTrigger(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	cd := s.clusterData
+	s.mu.RUnlock()
+
+	if cd == nil {
+		http.Error(w, `{"error":"no cluster data available yet"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	result := s.syncer.Sync(r.Context(), cd)
+
+	// Trigger async AI enrichment for new apps if enricher is available
+	if s.enricher != nil && result.AppsCreated > 0 {
+		go func() {
+			if err := s.enricher.EnrichNew(context.Background()); err != nil {
+				slog.Error("ai enrichment after sync failed", "error", err)
+			}
+		}()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) handleEnrich(w http.ResponseWriter, r *http.Request) {
+	// Run full AI enrichment in background
+	go func() {
+		if err := s.enricher.EnrichAll(context.Background()); err != nil {
+			slog.Error("manual ai enrichment failed", "error", err)
+		}
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"status":"enrichment started"}`))
+}
+
+func (s *Server) handleSyncLogs(w http.ResponseWriter, r *http.Request) {
+	logs, err := s.db.ListSyncLogs(r.Context(), 20)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(logs)
+}
+
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

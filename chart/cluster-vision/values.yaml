@@ -47,6 +47,13 @@ registryProxy: ""
 
 refresh: 5m
 
+# Optional: inject env vars from a Secret (e.g. DATABASE_URL, LITELLM_URL for EAM features)
+# envFrom:
+#   - secretRef:
+#       name: cluster-vision-eam-secrets
+#       optional: true
+envFrom: []
+
 resources:
   requests:
     cpu: 50m

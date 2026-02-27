@@ -51,11 +51,26 @@ func main() {
 		}}
 	}
 
+	// EAM optional config
+	if v := os.Getenv("DATABASE_URL"); v != "" {
+		cfg.DatabaseURL = v
+	}
+	if v := os.Getenv("LITELLM_URL"); v != "" {
+		cfg.LiteLLMURL = v
+	}
+	if v := os.Getenv("LITELLM_KEY"); v != "" {
+		cfg.LiteLLMKey = v
+	}
+	if v := os.Getenv("LITELLM_MODEL"); v != "" {
+		cfg.LiteLLMModel = v
+	}
+
 	slog.Info("cluster-vision starting",
 		"port", cfg.Port,
 		"kubeconfig", cfg.Kubeconfig,
 		"dataSources", len(cfg.DataSources),
 		"refresh", cfg.RefreshInterval,
+		"eam", cfg.DatabaseURL != "",
 	)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
