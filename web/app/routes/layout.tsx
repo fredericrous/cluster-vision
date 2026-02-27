@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
+import { SideNav } from "@fredericrous/duro-design-system";
 import styles from "./layout.module.css";
 
 interface NavItem {
@@ -74,7 +74,6 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-// Flatten all items for tab value matching
 const allItems = navGroups.flatMap((g) => g.items);
 
 function findActiveTab(pathname: string): string {
@@ -87,83 +86,31 @@ function findActiveTab(pathname: string): string {
   );
 }
 
-function findActiveGroup(pathname: string): string {
-  const activeValue = findActiveTab(pathname);
-  return (
-    navGroups.find((g) => g.items.some((item) => item.value === activeValue))
-      ?.group ?? "Overview"
-  );
-}
-
 export default function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const activeTab = findActiveTab(location.pathname);
-  const activeGroup = findActiveGroup(location.pathname);
-
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
-    () => new Set([activeGroup])
-  );
-
-  // Auto-expand the group containing the active route
-  useEffect(() => {
-    setExpandedGroups((prev) => {
-      if (prev.has(activeGroup)) return prev;
-      const next = new Set(prev);
-      next.add(activeGroup);
-      return next;
-    });
-  }, [activeGroup]);
-
-  const toggleGroup = (group: string) => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(group)) {
-        next.delete(group);
-      } else {
-        next.add(group);
-      }
-      return next;
-    });
-  };
 
   return (
     <div className={styles.layout}>
-      <nav className={styles.sidebar}>
+      <div className={styles.sidebar}>
         <div className={styles.header}>
           <h2 className={styles.title}>Cluster Vision</h2>
         </div>
         <div className={styles.navScroll}>
-          {navGroups.map((group) => {
-            const isExpanded = expandedGroups.has(group.group);
-            return (
-              <div key={group.group} className={styles.group}>
-                <button
-                  className={`${styles.groupHeader} ${isExpanded ? styles.groupHeaderActive : ""}`}
-                  onClick={() => toggleGroup(group.group)}
-                >
-                  <span
-                    className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ""}`}
-                  >
-                    &#9656;
-                  </span>
-                  {group.group}
-                </button>
-                {isExpanded &&
-                  group.items.map((item) => (
-                    <button
-                      key={item.value}
-                      className={`${styles.navItem} ${activeTab === item.value ? styles.navItemActive : ""}`}
-                      onClick={() => navigate(item.value)}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-              </div>
-            );
-          })}
+          <SideNav.Root value={activeTab} onValueChange={(v) => navigate(v)}>
+            {navGroups.map((group) => (
+              <SideNav.Group key={group.group} label={group.group}>
+                {group.items.map((item) => (
+                  <SideNav.Item key={item.value} value={item.value}>
+                    {item.label}
+                  </SideNav.Item>
+                ))}
+              </SideNav.Group>
+            ))}
+          </SideNav.Root>
         </div>
-      </nav>
+      </div>
       <main className={styles.content}>
         <Outlet />
       </main>
