@@ -164,10 +164,11 @@ type FluxKustomization struct {
 
 // GatewayInfo represents a Gateway API Gateway resource.
 type GatewayInfo struct {
-	Name      string
-	Namespace string
-	Cluster   string
-	Listeners []ListenerInfo
+	Name             string
+	Namespace        string
+	Cluster          string
+	GatewayClassName string
+	Listeners        []ListenerInfo
 }
 
 // ListenerInfo represents a single Gateway listener.

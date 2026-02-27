@@ -286,13 +286,14 @@ func (p *KubernetesParser) parseGateways(ctx context.Context) []model.GatewayInf
 
 	var result []model.GatewayInfo
 	for _, item := range list.Items {
-		gw := model.GatewayInfo{
-			Name:      item.GetName(),
-			Namespace: item.GetNamespace(),
-			Cluster:   p.clusterName,
-		}
-
 		spec, _ := item.Object["spec"].(map[string]interface{})
+
+		gw := model.GatewayInfo{
+			Name:             item.GetName(),
+			Namespace:        item.GetNamespace(),
+			Cluster:          p.clusterName,
+			GatewayClassName: strVal(spec, "gatewayClassName"),
+		}
 		listeners, _ := spec["listeners"].([]interface{})
 		for _, l := range listeners {
 			lm, ok := l.(map[string]interface{})

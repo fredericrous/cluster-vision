@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev:*)",
+      "Bash(wc:*)",
+      "Bash(npm install:*)",
+      "Bash(MOCK=true npm run dev:*)",
+      "Bash(security import:*)",
+      "Bash(openssl pkcs12:*)",
+      "Bash(curl:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(git -C /Users/fredericrous/Developer/Perso/cluster-vision log --oneline --all --grep=\"bump\\\\|tag\\\\|version\\\\|release\")",
+      "Bash(git show-ref:*)",
+      "Bash(find:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: enforce fixed node dimensions to prevent overlap and improve edge selection\n\nNodes now use explicit 160×44px dimensions matching the layout constants,\npreventing long labels from expanding nodes and overlapping neighbors.\nEdge selection applies inline bright orange style with z-index elevation.\n\nCo-Authored-By: Claude \\(claude-opus-4-6\\) <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git config:*)",
+      "Bash(git push:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nbump: cluster-vision to 0.7.9\n\nCo-Authored-By: Claude \\(claude-opus-4-6\\) <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(gh run list:*)",
+      "Bash(kubectl get:*)",
+      "Bash(KUBECONFIG=~/.kube/config-minerva-staging1 kubectl config:*)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm run build:*)",
+      "Bash(git commit:*)",
+      "Bash(git pull:*)",
+      "Bash(git checkout:*)",
+      "Bash(node -e:*)"
+    ]
+  }
+}

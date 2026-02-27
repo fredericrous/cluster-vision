@@ -23,8 +23,11 @@ func GenerateNetwork(data *model.ClusterData) model.DiagramResult {
 	fmt.Fprint(&b, "graph LR\n")
 	fmt.Fprint(&b, "  internet((\"Internet\"))\n")
 
-	// One subgraph per gateway
+	// One subgraph per gateway (skip mesh-internal waypoints)
 	for gi, gw := range data.Gateways {
+		if gw.GatewayClassName == "istio-waypoint" {
+			continue
+		}
 		gwID := fmt.Sprintf("gw%d", gi)
 		clusterLabel := gw.Cluster
 		if clusterLabel == "" {
