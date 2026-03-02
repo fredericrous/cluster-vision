@@ -11,7 +11,7 @@ import (
 func TestComplete(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"choices":[{"message":{"content":"hello world"}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello world"}}]}`))
 	}))
 	defer srv.Close()
 
@@ -28,7 +28,7 @@ func TestComplete(t *testing.T) {
 func TestCompleteHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`internal server error`))
+		_, _ = w.Write([]byte(`internal server error`))
 	}))
 	defer srv.Close()
 
@@ -45,7 +45,7 @@ func TestCompleteHTTPError(t *testing.T) {
 func TestCompleteNoChoices(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"choices":[]}`))
+		_, _ = w.Write([]byte(`{"choices":[]}`))
 	}))
 	defer srv.Close()
 
@@ -62,7 +62,7 @@ func TestCompleteNoChoices(t *testing.T) {
 func TestCompleteAPIError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"choices":[],"error":{"message":"rate limited"}}`))
+		_, _ = w.Write([]byte(`{"choices":[],"error":{"message":"rate limited"}}`))
 	}))
 	defer srv.Close()
 
@@ -79,7 +79,7 @@ func TestCompleteAPIError(t *testing.T) {
 func TestCompleteJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"choices":[{"message":{"content":"{\"name\":\"test\",\"value\":42}"}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"name\":\"test\",\"value\":42}"}}]}`))
 	}))
 	defer srv.Close()
 
@@ -112,7 +112,7 @@ func TestCompleteJSONWithCodeFences(t *testing.T) {
 				}{Content: "```json\n{\"name\":\"fenced\"}\n```"}},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 

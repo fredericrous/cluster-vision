@@ -86,7 +86,7 @@ func (c *Client) Complete(ctx context.Context, systemPrompt, userPrompt string) 
 	if err != nil {
 		return "", fmt.Errorf("sending request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

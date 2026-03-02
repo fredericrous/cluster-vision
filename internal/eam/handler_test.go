@@ -29,7 +29,7 @@ func TestGetApplicationBadUUID(t *testing.T) {
 	}
 
 	var body map[string]string
-	json.Unmarshal(w.Body.Bytes(), &body)
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
 	if body["error"] != "invalid id" {
 		t.Errorf("error = %q, want %q", body["error"], "invalid id")
 	}
@@ -62,7 +62,7 @@ func TestCreateApplicationMissingName(t *testing.T) {
 	}
 
 	var errResp map[string]string
-	json.Unmarshal(w.Body.Bytes(), &errResp)
+	_ = json.Unmarshal(w.Body.Bytes(), &errResp)
 	if errResp["error"] != "name is required" {
 		t.Errorf("error = %q, want %q", errResp["error"], "name is required")
 	}
@@ -143,7 +143,7 @@ func TestRouteRegistration(t *testing.T) {
 
 			// Use recover to handle nil DB panics — we just want to confirm route exists
 			func() {
-				defer func() { recover() }()
+				defer func() { _ = recover() }()
 				mux.ServeHTTP(w, req)
 			}()
 

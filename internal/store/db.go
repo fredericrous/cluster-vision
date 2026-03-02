@@ -58,7 +58,7 @@ func runMigrations(databaseURL string) error {
 	if err != nil {
 		return fmt.Errorf("opening database for migrations: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	driver, err := mpg.WithInstance(db, &mpg.Config{})
 	if err != nil {
