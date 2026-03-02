@@ -80,12 +80,12 @@ func BuildCapabilityPrompt(apps []AppContext) string {
 	var sb strings.Builder
 	sb.WriteString("Applications:\n")
 	for _, a := range apps {
-		sb.WriteString(fmt.Sprintf("- %s (namespace: %s", a.Name, a.Namespace))
+		fmt.Fprintf(&sb, "- %s (namespace: %s", a.Name, a.Namespace)
 		if a.ChartName != "" {
-			sb.WriteString(fmt.Sprintf(", chart: %s", a.ChartName))
+			fmt.Fprintf(&sb, ", chart: %s", a.ChartName)
 		}
 		if len(a.Images) > 0 {
-			sb.WriteString(fmt.Sprintf(", images: [%s]", strings.Join(a.Images, ", ")))
+			fmt.Fprintf(&sb, ", images: [%s]", strings.Join(a.Images, ", "))
 		}
 		sb.WriteString(")\n")
 	}
