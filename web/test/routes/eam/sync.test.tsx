@@ -41,7 +41,7 @@ function renderSync() {
     <Sync
       loaderData={logs}
       params={{}}
-      matches={[]}
+      matches={[] as any}
       actionData={undefined}
     />
   );

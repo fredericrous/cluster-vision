@@ -21,7 +21,7 @@ function renderApplications() {
     <Applications
       loaderData={{ items: [app1, app2], total: 2 }}
       params={{}}
-      matches={[]}
+      matches={[] as any}
       actionData={undefined}
     />
   );

@@ -11,7 +11,7 @@ function renderLandscape(overrides = {}) {
     <Landscape
       loaderData={{ ...landscapeData, ...overrides }}
       params={{}}
-      matches={[]}
+      matches={[] as any}
       actionData={undefined}
     />
   );

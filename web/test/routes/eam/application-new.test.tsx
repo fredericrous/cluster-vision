@@ -9,7 +9,7 @@ function renderNewForm() {
     <ApplicationNew
       loaderData={{ isNew: true }}
       params={{}}
-      matches={[]}
+      matches={[] as any}
       actionData={undefined}
     />
   );

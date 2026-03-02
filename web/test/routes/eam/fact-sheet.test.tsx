@@ -57,7 +57,7 @@ function renderFactSheet() {
         version_history: history,
       }}
       params={{ id: app.id }}
-      matches={[]}
+      matches={[] as any}
       actionData={undefined}
     />
   );
