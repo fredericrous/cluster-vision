@@ -36,6 +36,7 @@ jobs:
     name: Web Build & Typecheck
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       packages: read
     defaults:
       run:
