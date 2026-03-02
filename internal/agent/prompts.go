@@ -95,19 +95,19 @@ func BuildCapabilityPrompt(apps []AppContext) string {
 // BuildEnrichmentPrompt creates the user message for per-app enrichment.
 func BuildEnrichmentPrompt(app AppContext) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("App %q in namespace %q:\n", app.Name, app.Namespace))
+	fmt.Fprintf(&sb, "App %q in namespace %q:\n", app.Name, app.Namespace)
 	if app.ChartName != "" {
-		sb.WriteString(fmt.Sprintf("- Chart: %s", app.ChartName))
+		fmt.Fprintf(&sb, "- Chart: %s", app.ChartName)
 		if app.ChartVersion != "" {
-			sb.WriteString(fmt.Sprintf(" v%s", app.ChartVersion))
+			fmt.Fprintf(&sb, " v%s", app.ChartVersion)
 		}
 		sb.WriteString("\n")
 	}
 	if len(app.Images) > 0 {
-		sb.WriteString(fmt.Sprintf("- Images: %s\n", strings.Join(app.Images, ", ")))
+		fmt.Fprintf(&sb, "- Images: %s\n", strings.Join(app.Images, ", "))
 	}
 	if app.VulnCritical > 0 || app.VulnHigh > 0 {
-		sb.WriteString(fmt.Sprintf("- Vulnerabilities: %d critical, %d high\n", app.VulnCritical, app.VulnHigh))
+		fmt.Fprintf(&sb, "- Vulnerabilities: %d critical, %d high\n", app.VulnCritical, app.VulnHigh)
 	}
 	return sb.String()
 }
