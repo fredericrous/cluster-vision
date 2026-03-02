@@ -13,6 +13,7 @@ jobs:
   ci:
     name: CI
     uses: ./.github/workflows/ci.yaml
+    secrets: inherit
 
   release:
     name: Release
