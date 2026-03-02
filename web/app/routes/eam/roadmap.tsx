@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { Route } from "./+types/roadmap";
 import { fetchRoadmap } from "../../api.server";
-import { Badge } from "@fredericrous/duro-design-system";
+import { Badge } from "@duro-app/ui";
 import styles from "./eam.module.css";
 
 export function meta({}: Route.MetaArgs) {

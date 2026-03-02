@@ -1,6 +1,6 @@
 import type { Route } from "./+types/home";
 import { fetchDiagrams } from "../api.server";
-import { Card } from "@fredericrous/duro-design-system";
+import { Card } from "@duro-app/ui";
 import { Separator } from "@base-ui/react/separator";
 import { Link } from "react-router";
 import styles from "./home.module.css";

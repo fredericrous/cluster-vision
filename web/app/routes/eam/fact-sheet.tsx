@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import type { Route } from "./+types/fact-sheet";
 import { fetchApplication, fetchAppVersionHistory } from "../../api.server";
-import { Card, Badge } from "@fredericrous/duro-design-system";
+import { Card, Badge } from "@duro-app/ui";
 import styles from "./eam.module.css";
 
 export function meta({ data }: Route.MetaArgs) {
@@ -182,11 +182,11 @@ export default function FactSheet({ loaderData }: Route.ComponentProps) {
                   </span>
                   <span className={styles.fieldValue}>
                     {entry.chart_version || entry.image_tag || "—"}
-                    {entry.outdated && <Badge variant="error" size="sm" style={{ marginLeft: "0.375rem" }}>outdated</Badge>}
+                    {entry.outdated && <span style={{ marginLeft: "0.375rem" }}><Badge variant="error" size="sm">outdated</Badge></span>}
                     {entry.vuln_critical > 0 && (
-                      <Badge variant="error" size="sm" style={{ marginLeft: "0.375rem" }}>
-                        {entry.vuln_critical} crit
-                      </Badge>
+                      <span style={{ marginLeft: "0.375rem" }}>
+                        <Badge variant="error" size="sm">{entry.vuln_critical} crit</Badge>
+                      </span>
                     )}
                   </span>
                 </div>

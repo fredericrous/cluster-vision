@@ -4,7 +4,7 @@ import { fetchDiagram } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
 import { DataTable, BooleanBadge } from "../components/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Badge } from "@fredericrous/duro-design-system";
+import { Badge } from "@duro-app/ui";
 
 interface CertificateRow {
   name: string;

@@ -3,7 +3,7 @@ import type { Route } from "./+types/components";
 import { fetchComponents } from "../../api.server";
 import type { ITComponent } from "../../api.server";
 import { DataTable } from "../../components/data-table";
-import { Badge } from "@fredericrous/duro-design-system";
+import { Badge } from "@duro-app/ui";
 import type { ColumnDef } from "@tanstack/react-table";
 import styles from "./eam.module.css";
 
