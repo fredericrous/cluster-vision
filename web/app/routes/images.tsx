@@ -4,7 +4,7 @@ import { fetchDiagram } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
 import { DataTable, OutdatedBadge, SecurityBadge } from "../components/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Tooltip } from "@duro-app/ui";
+import { Tooltip } from "@fredericrous/duro-design-system";
 import tableStyles from "../components/data-table.module.css";
 
 interface ImageRow {

@@ -4,7 +4,7 @@ import type { Route } from "./+types/applications";
 import { fetchApplications } from "../../api.server";
 import type { Application } from "../../api.server";
 import { DataTable } from "../../components/data-table";
-import { Badge } from "@duro-app/ui";
+import { Badge } from "@fredericrous/duro-design-system";
 import type { ColumnDef } from "@tanstack/react-table";
 import styles from "./eam.module.css";
 

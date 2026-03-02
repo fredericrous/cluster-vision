@@ -1,5 +1,5 @@
 import { Outlet, useLocation, useNavigate } from "react-router";
-import { SideNav } from "@duro-app/ui";
+import { SideNav } from "@fredericrous/duro-design-system";
 import { fetchConfig } from "../api.server";
 import type { Route } from "./+types/layout";
 import styles from "./layout.module.css";

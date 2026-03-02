@@ -7,8 +7,8 @@ import {
   ScrollRestoration,
 } from "react-router";
 
-import { ThemeProvider } from "@duro-app/ui";
-import "@duro-app/ui/reset.css";
+import { ThemeProvider } from "@fredericrous/duro-design-system";
+import "@fredericrous/duro-design-system/dist/index.css";
 import type { Route } from "./+types/root";
 import "./app.css";
 

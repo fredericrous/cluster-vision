@@ -1,5 +1,5 @@
 import { Suspense, lazy, type ReactNode } from "react";
-import { ScrollArea } from "@duro-app/ui";
+import { ScrollArea } from "@fredericrous/duro-design-system";
 import type { DiagramResult } from "../api.server";
 import styles from "./diagram-page.module.css";
 
