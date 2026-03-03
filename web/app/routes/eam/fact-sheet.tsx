@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import type { Route } from "./+types/fact-sheet";
 import { fetchApplication, fetchAppVersionHistory } from "../../api.server";
-import { Card, Badge } from "@fredericrous/duro-design-system";
+import { Card, Badge } from "@duro-app/ui";
 import styles from "./eam.module.css";
 
 export function meta({ data }: Route.MetaArgs) {

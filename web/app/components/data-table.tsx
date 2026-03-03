@@ -9,7 +9,7 @@ import {
   type SortingState,
   type ColumnFiltersState,
 } from "@tanstack/react-table";
-import { Badge, Select, Table, Tooltip } from "@fredericrous/duro-design-system";
+import { Badge, Select, Table, Tooltip } from "@duro-app/ui";
 import styles from "./data-table.module.css";
 
 declare module "@tanstack/react-table" {
