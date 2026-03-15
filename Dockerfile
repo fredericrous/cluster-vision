@@ -26,7 +26,7 @@ COPY web/ .
 RUN npm run build
 
 # Stage 3: Final runtime image
-FROM node:22-alpine
+FROM node:24-alpine
 
 RUN apk add --no-cache tini
 
