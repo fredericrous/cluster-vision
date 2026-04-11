@@ -9,6 +9,9 @@ import {
 
 import { ThemeProvider } from "@duro-app/ui";
 import "@duro-app/ui/reset.css";
+// StyleX-compiled atomic class styles for every @duro-app/ui component.
+// Without this, JSX uses class names like x1ghz6dp/x1717udv with no backing CSS rules.
+import "@duro-app/ui/dist/index.css";
 import type { Route } from "./+types/root";
 import "./app.css";
 
