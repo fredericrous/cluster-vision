@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { Route } from "./+types/images";
 import { fetchDiagram } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
-import { DataTable, OutdatedBadge, SecurityBadge } from "../components/data-table";
+import { DataTable, ExploitBadge, OutdatedBadge, SecurityBadge } from "../components/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Tooltip } from "@duro-app/ui";
 import tableStyles from "../components/data-table.module.css";
@@ -18,6 +18,9 @@ interface ImageRow {
   outdated: boolean;
   securityRisk: string;
   vulnSummary: string;
+  exploitRisk: string;     // "kev" | "high-epss" | "low-epss" | "none" | ""
+  exploitSummary: string;
+  kevCVEs: string;          // comma-separated KEV-listed CVE IDs
 }
 
 export function meta({}: Route.MetaArgs) {
@@ -66,6 +69,16 @@ const columns: ColumnDef<ImageRow, string>[] = [
       <SecurityBadge
         risk={row.original.securityRisk}
         summary={row.original.vulnSummary}
+      />
+    ),
+  },
+  {
+    accessorKey: "exploitRisk",
+    header: "Exploit risk",
+    cell: ({ row }) => (
+      <ExploitBadge
+        risk={row.original.exploitRisk}
+        summary={row.original.exploitSummary}
       />
     ),
   },

@@ -758,6 +758,7 @@ func (p *KubernetesParser) parsePods(ctx context.Context) []model.PodImageInfo {
 				img = resolved
 			}
 			result = append(result, model.PodImageInfo{
+				Cluster:       p.clusterName,
 				Namespace:     pod.Namespace,
 				PodName:       pod.Name,
 				Container:     c.Name,
@@ -772,6 +773,7 @@ func (p *KubernetesParser) parsePods(ctx context.Context) []model.PodImageInfo {
 				img = resolved
 			}
 			result = append(result, model.PodImageInfo{
+				Cluster:       p.clusterName,
 				Namespace:     pod.Namespace,
 				PodName:       pod.Name,
 				Container:     c.Name,
@@ -1428,6 +1430,31 @@ func (p *KubernetesParser) parseVulnReports(ctx context.Context) []model.ImageVu
 		medium := intVal(summary, "mediumCount")
 		low := intVal(summary, "lowCount")
 
+		// Extract per-CVE list — required for KEV/EPSS lookup downstream.
+		// trivy-operator stores the array at report.vulnerabilities[].vulnerabilityID.
+		var cves []string
+		if vulns, ok := report["vulnerabilities"].([]interface{}); ok {
+			cves = make([]string, 0, len(vulns))
+			seenCVE := make(map[string]struct{}, len(vulns))
+			for _, vi := range vulns {
+				v, _ := vi.(map[string]interface{})
+				if v == nil {
+					continue
+				}
+				id, _ := v["vulnerabilityID"].(string)
+				id = strings.TrimSpace(id)
+				if id == "" {
+					continue
+				}
+				id = strings.ToUpper(id)
+				if _, dup := seenCVE[id]; dup {
+					continue
+				}
+				seenCVE[id] = struct{}{}
+				cves = append(cves, id)
+			}
+		}
+
 		key := vulnKey{image: imageRef, cluster: p.clusterName}
 		if existing, ok := merged[key]; ok {
 			// Take max counts across reports for the same image
@@ -1443,6 +1470,19 @@ func (p *KubernetesParser) parseVulnReports(ctx context.Context) []model.ImageVu
 			if low > existing.Low {
 				existing.Low = low
 			}
+			// Union the CVE sets across reports for the same image.
+			if len(cves) > 0 {
+				seen := make(map[string]struct{}, len(existing.CVEs)+len(cves))
+				for _, c := range existing.CVEs {
+					seen[c] = struct{}{}
+				}
+				for _, c := range cves {
+					if _, ok := seen[c]; !ok {
+						seen[c] = struct{}{}
+						existing.CVEs = append(existing.CVEs, c)
+					}
+				}
+			}
 		} else {
 			merged[key] = &model.ImageVuln{
 				Image:    imageRef,
@@ -1451,6 +1491,7 @@ func (p *KubernetesParser) parseVulnReports(ctx context.Context) []model.ImageVu
 				High:     high,
 				Medium:   medium,
 				Low:      low,
+				CVEs:     cves,
 			}
 		}
 	}

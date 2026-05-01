@@ -15,10 +15,12 @@ import (
 	"github.com/fredericrous/cluster-vision/internal/diagram"
 	"github.com/fredericrous/cluster-vision/internal/discovery"
 	"github.com/fredericrous/cluster-vision/internal/eam"
+	cvmetrics "github.com/fredericrous/cluster-vision/internal/metrics"
 	"github.com/fredericrous/cluster-vision/internal/model"
 	"github.com/fredericrous/cluster-vision/internal/parser"
 	"github.com/fredericrous/cluster-vision/internal/store"
 	"github.com/fredericrous/cluster-vision/internal/versions"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Config holds server configuration.
@@ -44,6 +46,7 @@ type Server struct {
 	imageChecker    *versions.ImageChecker
 	nodeChecker     *versions.NodeChecker
 	securityChecker *versions.SecurityChecker
+	exploit         *versions.ExploitEnricher // CISA KEV + FIRST EPSS, nil tolerated
 	mu              sync.RWMutex
 	data            []model.DiagramResult
 	lastGen         time.Time
@@ -89,8 +92,11 @@ func New(cfg Config) (*Server, error) {
 	imageChecker := versions.NewImageChecker()
 	nodeChecker := versions.NewNodeChecker()
 	securityChecker := versions.NewSecurityChecker()
+	// ExploitEnricher works in-memory if db is nil; it's wired with the
+	// db (if any) below after DB connect.
+	exploitEnricher := versions.NewExploitEnricher(nil)
 
-	s := &Server{cfg: cfg, k8sParsers: parsers, checker: checker, imageChecker: imageChecker, nodeChecker: nodeChecker, securityChecker: securityChecker}
+	s := &Server{cfg: cfg, k8sParsers: parsers, checker: checker, imageChecker: imageChecker, nodeChecker: nodeChecker, securityChecker: securityChecker, exploit: exploitEnricher}
 
 	// Optional EAM database
 	if cfg.DatabaseURL != "" {
@@ -101,6 +107,9 @@ func New(cfg Config) (*Server, error) {
 			s.db = db
 			s.syncer = discovery.NewSyncer(db)
 			s.eamHandler = eam.NewHandler(db)
+			// Re-create the enricher with persistence backing now that we
+			// have the db. Cache stays warm across pod restarts.
+			s.exploit = versions.NewExploitEnricher(db)
 			slog.Info("EAM features enabled")
 
 			// Optional AI enrichment
@@ -117,16 +126,27 @@ func New(cfg Config) (*Server, error) {
 
 // Start begins serving HTTP and starts the background refresh loop.
 func (s *Server) Start(ctx context.Context) error {
+	// Warm the KEV/EPSS cache from the persisted table so the first
+	// refresh has data even before the daily fetch completes. Best-effort:
+	// a fresh cluster has an empty table, that's fine.
+	if err := s.exploit.LoadFromDB(ctx); err != nil {
+		slog.Warn("exploit enrichment LoadFromDB failed — first refresh will run with empty cache", "error", err)
+	}
+
 	// Initial generation
 	s.refresh(ctx)
 
 	// Background refresh
 	go s.refreshLoop(ctx)
+	go s.exploitEnrichmentLoop(ctx)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/diagrams", s.handleDiagrams)
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/config", s.handleConfig)
+	// Prometheus scrape endpoint — no auth (cluster-internal only via the
+	// new `api` Service port; not on the public Gateway).
+	mux.Handle("GET /metrics", promhttp.Handler())
 
 	// EAM routes (only if DB connected)
 	if s.eamHandler != nil {
@@ -168,6 +188,68 @@ func (s *Server) refreshLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.refresh(ctx)
+		}
+	}
+}
+
+// exploitEnrichmentLoop refreshes the KEV/EPSS cache once a day. Runs
+// once at startup (kicked off here, not in Start, to keep boot fast),
+// then every 24 hours. Failures are logged; the previous cache stays
+// in memory until the next attempt succeeds.
+func (s *Server) exploitEnrichmentLoop(ctx context.Context) {
+	const interval = 24 * time.Hour
+
+	doRefresh := func() {
+		fctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		if err := s.exploit.Refresh(fctx); err != nil {
+			slog.Warn("exploit enrichment refresh failed", "error", err)
+			return
+		}
+		kevN, epssN := s.exploit.CacheSize()
+		cvmetrics.EnrichmentLastFetch.Set(float64(s.exploit.LastFetch().Unix()))
+		cvmetrics.EnrichmentCVETotal.WithLabelValues("kev").Set(float64(kevN))
+		cvmetrics.EnrichmentCVETotal.WithLabelValues("epss").Set(float64(epssN))
+	}
+
+	// First fetch — but only if the cache is empty or older than a day.
+	if last := s.exploit.LastFetch(); last.IsZero() || time.Since(last) > interval {
+		go doRefresh()
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			doRefresh()
+		}
+	}
+}
+
+// enrichImageVulns populates KEVCount, KEVCVEs, MaxEPSS, MaxEPSSCVE on
+// each ImageVuln by looking up its captured CVE list against the
+// in-memory enrichment cache. Image-level (no namespace) — the metric
+// layer recovers (cluster, namespace) at emit time from PodImageInfo.
+func (s *Server) enrichImageVulns(vulns []model.ImageVuln) {
+	for i := range vulns {
+		v := &vulns[i]
+		v.KEVCount = 0
+		v.KEVCVEs = v.KEVCVEs[:0]
+		v.MaxEPSS = 0
+		v.MaxEPSSCVE = ""
+		for _, cve := range v.CVEs {
+			en := s.exploit.Lookup(cve)
+			if en.KEV {
+				v.KEVCount++
+				v.KEVCVEs = append(v.KEVCVEs, cve)
+			}
+			if en.EPSSScore > v.MaxEPSS {
+				v.MaxEPSS = en.EPSSScore
+				v.MaxEPSSCVE = cve
+			}
 		}
 	}
 }
@@ -242,6 +324,15 @@ func (s *Server) refresh(ctx context.Context) {
 			clusterData.InfraSources = append(clusterData.InfraSources, *src)
 		}
 	}
+
+	// Cross-reference each image's CVEs with the cached KEV/EPSS data.
+	// Pure in-memory map lookups — sub-millisecond even with thousands
+	// of CVEs across hundreds of images.
+	s.enrichImageVulns(clusterData.ImageVulns)
+
+	// Emit Prometheus metrics keyed on (cluster, namespace, image) by
+	// joining ImageVulns × Pods. Reset between refreshes inside the call.
+	cvmetrics.EmitImageVulnMetrics(clusterData.Pods, clusterData.ImageVulns)
 
 	diagrams := diagram.GenerateTopologySections(clusterData)
 	diagrams = append(diagrams,

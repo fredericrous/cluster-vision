@@ -21,6 +21,11 @@ type ImageRow struct {
 	Outdated     bool   `json:"outdated"`      // true if latest != current tag
 	SecurityRisk string `json:"securityRisk"`  // "critical" | "warning" | "none" | ""
 	VulnSummary  string `json:"vulnSummary"`   // human-readable tooltip
+	// Exploit-risk badge driven by CISA KEV + FIRST EPSS. Empty for
+	// images with no Trivy report. See vulnExploitRisk() for tier rules.
+	ExploitRisk    string `json:"exploitRisk"`    // "kev" | "high-epss" | "low-epss" | "none" | ""
+	ExploitSummary string `json:"exploitSummary"` // e.g. "1 KEV (CVE-2024-12345)" or "EPSS 0.87 (CVE-…)"
+	KEVCVEs        string `json:"kevCVEs"`        // comma-separated for tooltip
 }
 
 // imageKey uniquely identifies an image ref + container type.
@@ -97,22 +102,30 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 		// Security risk from trivy VulnerabilityReports
 		secRisk := ""
 		vulnSum := ""
+		exploitRisk := ""
+		exploitSum := ""
+		kevList := ""
 		imageRef := key.image + ":" + key.tag
 		if v, ok := vulnByImage[imageRef]; ok {
 			secRisk, vulnSum = vulnRisk(v)
+			exploitRisk, exploitSum = vulnExploitRisk(v)
+			kevList = strings.Join(v.KEVCVEs, ",")
 		}
 
 		rows = append(rows, ImageRow{
-			Image:        key.image,
-			Tag:          key.tag,
-			Type:         typ,
-			Namespaces:   strings.Join(ns, ", "),
-			Pods:         len(a.pods),
-			Registry:     a.registry,
-			Latest:       latest,
-			Outdated:     outdated,
-			SecurityRisk: secRisk,
-			VulnSummary:  vulnSum,
+			Image:          key.image,
+			Tag:            key.tag,
+			Type:           typ,
+			Namespaces:     strings.Join(ns, ", "),
+			Pods:           len(a.pods),
+			Registry:       a.registry,
+			Latest:         latest,
+			Outdated:       outdated,
+			SecurityRisk:   secRisk,
+			VulnSummary:    vulnSum,
+			ExploitRisk:    exploitRisk,
+			ExploitSummary: exploitSum,
+			KEVCVEs:        kevList,
 		})
 	}
 

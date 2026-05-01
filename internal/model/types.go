@@ -38,10 +38,29 @@ type ImageVuln struct {
 	High     int
 	Medium   int
 	Low      int
+
+	// CVEs holds the deduplicated CVE IDs from Trivy's
+	// VulnerabilityReport.report.vulnerabilities[].vulnerabilityID. Captured
+	// at parse time so we can later cross-reference with KEV/EPSS without
+	// re-reading the Trivy CRs. May be nil for older reports without per-CVE
+	// detail; consumers should handle len()==0 gracefully.
+	CVEs []string
+
+	// KEV/EPSS enrichment — populated by the discovery enrichWithVulns pass
+	// after CVEs are looked up against the cve_enrichment cache. Image-level,
+	// not namespace-level (this struct is collapsed across namespaces by the
+	// existing parser). The metric layer recovers namespace at emit time by
+	// joining with PodImageInfo.
+	KEVCount   int      // count of CVEs in this image listed on CISA KEV
+	KEVCVEs    []string // KEV-flagged CVE IDs (for tooltip / table display)
+	MaxEPSS    float64  // highest EPSS score across the image's CVEs
+	MaxEPSSCVE string   // CVE that drove MaxEPSS (for tooltip)
 }
 
 // PodImageInfo represents a container image running in a pod.
 type PodImageInfo struct {
+	Cluster       string // stamped at parse time so the merged slice from
+	                    // multiple parsers stays attributable per cluster
 	Namespace     string
 	PodName       string
 	Container     string
