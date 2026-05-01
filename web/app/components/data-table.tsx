@@ -181,6 +181,40 @@ export function SecurityBadge({ risk, summary }: { risk: string; summary: string
   return <>—</>;
 }
 
+// ExploitBadge surfaces the KEV/EPSS-derived risk tier from
+// vulnExploitRisk(). "kev" is the loudest tier (CISA-confirmed active
+// exploitation); "high-epss" is >50% predicted exploitation in 30d;
+// "low-epss" is a watch-list signal.
+export function ExploitBadge({ risk, summary }: { risk: string; summary: string }) {
+  if (risk === "kev")
+    return (
+      <Tooltip.Root content={summary || "CISA Known Exploited Vulnerability"}>
+        <Tooltip.Trigger>
+          <Badge variant="error" size="sm">KEV</Badge>
+        </Tooltip.Trigger>
+      </Tooltip.Root>
+    );
+  if (risk === "high-epss")
+    return (
+      <Tooltip.Root content={summary}>
+        <Tooltip.Trigger>
+          <Badge variant="warning" size="sm">EPSS↑</Badge>
+        </Tooltip.Trigger>
+      </Tooltip.Root>
+    );
+  if (risk === "low-epss")
+    return (
+      <Tooltip.Root content={summary}>
+        <Tooltip.Trigger>
+          <Badge variant="default" size="sm">EPSS</Badge>
+        </Tooltip.Trigger>
+      </Tooltip.Root>
+    );
+  if (risk === "none")
+    return <Badge variant="success" size="sm">ok</Badge>;
+  return <>—</>;
+}
+
 export function OutdatedBadge({
   value,
   outdated,

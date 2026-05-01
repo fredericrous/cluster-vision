@@ -12,5 +12,12 @@ spec:
       targetPort: web
       protocol: TCP
       name: web
+    # API port — exposes /metrics for Prometheus scrape and (in-cluster
+    # only) the JSON API. Public ingress via the chart's HTTPRoute still
+    # uses the web port.
+    - port: {{ .Values.api.port }}
+      targetPort: api
+      protocol: TCP
+      name: api
   selector:
     {{- include "cluster-vision.selectorLabels" . | nindent 4 }}

@@ -188,3 +188,38 @@ func vulnRisk(v model.ImageVuln) (risk, summary string) {
 
 	return risk, summary
 }
+
+// vulnExploitRisk maps KEV/EPSS enrichment to a UI badge tier.
+//
+// Tier rules (highest wins):
+//   - "kev"       → at least one CVE listed on CISA KEV (actively exploited)
+//   - "high-epss" → max EPSS > 0.5 (>50% probability of exploitation in 30d)
+//   - "low-epss"  → max EPSS > 0.1 (some exploit signal, watch list)
+//   - "none"      → zero KEV, EPSS <= 0.1 (or no enrichment data)
+//
+// Empty risk + summary means "no Trivy report at all" — caller decides
+// whether to render or hide the column for that row.
+func vulnExploitRisk(v model.ImageVuln) (risk, summary string) {
+	switch {
+	case v.KEVCount > 0:
+		risk = "kev"
+		first := ""
+		if len(v.KEVCVEs) > 0 {
+			first = v.KEVCVEs[0]
+		}
+		if v.KEVCount == 1 && first != "" {
+			summary = fmt.Sprintf("CISA KEV: %s", first)
+		} else {
+			summary = fmt.Sprintf("%d KEV-listed CVEs (e.g. %s)", v.KEVCount, first)
+		}
+	case v.MaxEPSS > 0.5:
+		risk = "high-epss"
+		summary = fmt.Sprintf("EPSS %.2f — %s", v.MaxEPSS, v.MaxEPSSCVE)
+	case v.MaxEPSS > 0.1:
+		risk = "low-epss"
+		summary = fmt.Sprintf("EPSS %.2f — %s", v.MaxEPSS, v.MaxEPSSCVE)
+	default:
+		risk = "none"
+	}
+	return risk, summary
+}
