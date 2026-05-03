@@ -47,9 +47,16 @@ const MAX_NODE_W = 300;
 // Horizontal padding (14px * 2) + border (1px * 2) + cluster accent (3px)
 const NODE_PAD = 33;
 
-// Cluster display order: NAS is deployed first, then Homelab, then
-// Monitor (which depends on Homelab for OIDC + uses Homelab Garage).
+// Cluster display order WITHIN a row.
 const CLUSTER_ORDER: Record<string, number> = { NAS: 0, Homelab: 1, Monitor: 2 };
+
+// Cluster row assignment. Clusters in the same row lay out side-by-side;
+// rows stack vertically with CLUSTER_ROW_GAP between them. Monitor sits
+// on a second row because it consumes services from BOTH NAS (Garage S3)
+// and Homelab (Authelia OIDC), so a horizontal-only layout would force
+// long crossing edges over the whole diagram. Defaults to row 0.
+const CLUSTER_ROW: Record<string, number> = { NAS: 0, Homelab: 0, Monitor: 1 };
+const CLUSTER_ROW_GAP = 80;
 
 const nodeTypes = { flow: FlowNode, layerGroup: LayerGroup };
 const edgeTypes = { smartStep: SmartStepEdge };
@@ -170,13 +177,6 @@ function buildLayout(
     clusterResults.set(cluster, positioned);
   }
 
-  // Compute uniform rank heights across clusters (so ranks align horizontally)
-  const allRanks = new Set<number>();
-  for (const positioned of clusterResults.values()) {
-    for (const p of positioned) allRanks.add(p.rank);
-  }
-  const sortedRanks = [...allRanks].sort((a, b) => a - b);
-
   // For each rank in each cluster, compute bounding box
   type RankBBox = { minX: number; maxX: number; minY: number; maxY: number; nodes: PositionedNode[] };
   const clusterRankBoxes = new Map<string, Map<number, RankBBox>>();
@@ -205,18 +205,18 @@ function buildLayout(
     clusterRankBoxes.set(cluster, boxes);
   }
 
-  // Compute uniform rank heights across all clusters at each rank
-  const rankHeights = new Map<number, number>();
-  for (const rank of sortedRanks) {
-    let maxH = 0;
-    for (const cluster of clusters) {
-      const box = clusterRankBoxes.get(cluster)?.get(rank);
-      if (box) maxH = Math.max(maxH, box.maxY - box.minY + PAD_TOP + PAD_BOTTOM);
-    }
-    rankHeights.set(rank, maxH);
+  // Group clusters by row. Each row is laid out independently — its own
+  // rank heights and cluster X cursor — so a single tall cluster on
+  // another row doesn't push the rest down.
+  const clustersByRow = new Map<number, string[]>();
+  for (const cluster of clusters) {
+    const row = CLUSTER_ROW[cluster] ?? 99;
+    if (!clustersByRow.has(row)) clustersByRow.set(row, []);
+    clustersByRow.get(row)!.push(cluster);
   }
+  const sortedRows = [...clustersByRow.keys()].sort((a, b) => a - b);
 
-  // Compute cluster widths (max rank width per cluster)
+  // Compute cluster widths (max rank width per cluster) — same regardless of row
   const clusterWidths = new Map<string, number>();
   for (const cluster of clusters) {
     const boxes = clusterRankBoxes.get(cluster);
@@ -228,23 +228,74 @@ function buildLayout(
     clusterWidths.set(cluster, maxW);
   }
 
-  // Compute cluster X offsets (side by side)
-  const clusterXMap = new Map<string, number>();
-  let xCursor = 0;
-  for (const cluster of clusters) {
-    const w = clusterWidths.get(cluster);
-    if (w === undefined) continue;
-    clusterXMap.set(cluster, xCursor);
-    xCursor += w + CLUSTER_GAP;
+  // Per-row rank heights (uniform across that row's clusters only)
+  const rowRankHeights = new Map<number, Map<number, number>>();
+  for (const [row, rowClusters] of clustersByRow) {
+    const ranks = new Set<number>();
+    for (const cluster of rowClusters) {
+      const boxes = clusterRankBoxes.get(cluster);
+      if (boxes) for (const r of boxes.keys()) ranks.add(r);
+    }
+    const heights = new Map<number, number>();
+    for (const rank of ranks) {
+      let maxH = 0;
+      for (const cluster of rowClusters) {
+        const box = clusterRankBoxes.get(cluster)?.get(rank);
+        if (box) maxH = Math.max(maxH, box.maxY - box.minY + PAD_TOP + PAD_BOTTOM);
+      }
+      heights.set(rank, maxH);
+    }
+    rowRankHeights.set(row, heights);
   }
 
-  // Compute rank Y offsets (stacked vertically)
-  const rankYMap = new Map<number, number>();
-  let yCursor = 0;
-  for (const rank of sortedRanks) {
-    rankYMap.set(rank, yCursor);
-    yCursor += rankHeights.get(rank)! + 20; // gap between rank groups
+  // Per-row rank Y offsets (relative to row top)
+  const rowRankY = new Map<number, Map<number, number>>();
+  const rowHeight = new Map<number, number>();
+  for (const row of sortedRows) {
+    const heights = rowRankHeights.get(row)!;
+    const ranksInRow = [...heights.keys()].sort((a, b) => a - b);
+    const yMap = new Map<number, number>();
+    let yCursor = 0;
+    for (const rank of ranksInRow) {
+      yMap.set(rank, yCursor);
+      yCursor += heights.get(rank)! + 20;
+    }
+    rowRankY.set(row, yMap);
+    rowHeight.set(row, Math.max(0, yCursor - 20)); // remove last trailing gap
   }
+
+  // Cumulative Y offset per row
+  const rowYOffset = new Map<number, number>();
+  let yAcc = 0;
+  for (const row of sortedRows) {
+    rowYOffset.set(row, yAcc);
+    yAcc += rowHeight.get(row)! + CLUSTER_ROW_GAP;
+  }
+
+  // Per-row cluster X offsets (each row starts at x=0)
+  const clusterXMap = new Map<string, number>();
+  for (const row of sortedRows) {
+    const rowClusters = clustersByRow.get(row)!.slice().sort(
+      (a, b) => (CLUSTER_ORDER[a] ?? 99) - (CLUSTER_ORDER[b] ?? 99)
+    );
+    let xCursor = 0;
+    for (const cluster of rowClusters) {
+      const w = clusterWidths.get(cluster);
+      if (w === undefined) continue;
+      clusterXMap.set(cluster, xCursor);
+      xCursor += w + CLUSTER_GAP;
+    }
+  }
+
+  // Resolve a cluster's rank Y in the global coordinate space
+  const rankYFor = (cluster: string, rank: number): number => {
+    const row = CLUSTER_ROW[cluster] ?? 99;
+    return (rowYOffset.get(row) ?? 0) + (rowRankY.get(row)?.get(rank) ?? 0);
+  };
+  const rankHeightFor = (cluster: string, rank: number): number => {
+    const row = CLUSTER_ROW[cluster] ?? 99;
+    return rowRankHeights.get(row)?.get(rank) ?? 0;
+  };
 
   // Build ReactFlow nodes: group containers + child nodes
   const allNodes: Node[] = [];
@@ -256,8 +307,8 @@ function buildLayout(
     const cW = clusterWidths.get(cluster)!;
 
     for (const [rank, box] of boxes) {
-      const rY = rankYMap.get(rank)!;
-      const rH = rankHeights.get(rank)!;
+      const rY = rankYFor(cluster, rank);
+      const rH = rankHeightFor(cluster, rank);
       const groupId = `${cluster}-rank-${rank}`;
 
       allNodes.push({
