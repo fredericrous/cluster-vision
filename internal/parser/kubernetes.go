@@ -1258,13 +1258,14 @@ func (p *KubernetesParser) parseServices(ctx context.Context) []model.ServiceInf
 		}
 
 		result = append(result, model.ServiceInfo{
-			Name:      svc.Name,
-			Namespace: svc.Namespace,
-			Cluster:   p.clusterName,
-			Type:      string(svc.Spec.Type),
-			ClusterIP: svc.Spec.ClusterIP,
-			Ports:     strings.Join(portStrs, ", "),
-			Selector:  svc.Spec.Selector,
+			Name:        svc.Name,
+			Namespace:   svc.Namespace,
+			Cluster:     p.clusterName,
+			Type:        string(svc.Spec.Type),
+			ClusterIP:   svc.Spec.ClusterIP,
+			Ports:       strings.Join(portStrs, ", "),
+			Selector:    svc.Spec.Selector,
+			Annotations: svc.Annotations,
 		})
 	}
 	return result

@@ -26,6 +26,10 @@ interface FlowEdgeRaw {
   source: string;
   target: string;
   crossCluster?: boolean;
+  // Cross-cluster edges carry a label (Cilium global Service name or
+  // Istio host) so multiple distinct paths between the same kustomization
+  // pair can be distinguished visually.
+  label?: string;
 }
 
 interface FlowDataRaw {
@@ -43,8 +47,9 @@ const MAX_NODE_W = 300;
 // Horizontal padding (14px * 2) + border (1px * 2) + cluster accent (3px)
 const NODE_PAD = 33;
 
-// Cluster display order: NAS is deployed before Homelab.
-const CLUSTER_ORDER: Record<string, number> = { NAS: 0, Homelab: 1 };
+// Cluster display order: NAS is deployed first, then Homelab, then
+// Monitor (which depends on Homelab for OIDC + uses Homelab Garage).
+const CLUSTER_ORDER: Record<string, number> = { NAS: 0, Homelab: 1, Monitor: 2 };
 
 const nodeTypes = { flow: FlowNode, layerGroup: LayerGroup };
 const edgeTypes = { smartStep: SmartStepEdge };
@@ -300,6 +305,15 @@ function buildLayout(
     source: e.source,
     target: e.target,
     type: "smartStep",
+    ...(e.label
+      ? {
+          label: e.label,
+          labelStyle: { fontSize: 10, fill: "#fbbf24", fontWeight: 600 },
+          labelBgStyle: { fill: "rgba(15, 23, 42, 0.85)" },
+          labelBgPadding: [4, 2] as [number, number],
+          labelBgBorderRadius: 3,
+        }
+      : {}),
     ...(e.crossCluster
       ? {
           animated: true,

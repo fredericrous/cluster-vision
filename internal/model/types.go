@@ -343,6 +343,11 @@ type ServiceInfo struct {
 	ClusterIP string
 	Ports     string
 	Selector  map[string]string
+	// Annotations are captured so the dependency diagram can detect
+	// cross-cluster Cilium-mesh Services (annotated
+	// `service.cilium.io/global=true`) and pair them with their
+	// matching peer Service in another cluster.
+	Annotations map[string]string
 }
 
 // RBACBindingInfo represents a role binding subject-to-role mapping.

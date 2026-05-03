@@ -38,6 +38,9 @@ type FlowEdge struct {
 	Source       string `json:"source"`
 	Target       string `json:"target"`
 	CrossCluster bool   `json:"crossCluster,omitempty"`
+	// Label is the Service name (Cilium global) or Istio host that
+	// drives this edge. Empty for plain Flux dependency edges.
+	Label string `json:"label,omitempty"`
 }
 
 // FlowData holds the complete flow diagram data.
@@ -184,25 +187,153 @@ func discoverCrossClusterEdges(data *model.ClusterData, idSet map[string]bool) [
 			continue
 		}
 
-		// Deduplicate: canonical key is sorted pair
+		// Use the SE host (or first host) as the edge label so the same
+		// kust pair can carry multiple distinct cross-cluster edges (e.g.
+		// vault + nas-vault both flow Homelab→NAS).
+		label := se.Name
+		if len(se.Hosts) > 0 {
+			label = se.Hosts[0]
+		}
+		// Dedup on (sorted-pair, label) so symmetric SEs collapse but
+		// distinct hosts/labels keep their own edge.
 		pairKey := targetKust + "→" + sourceKust
 		if targetKust > sourceKust {
 			pairKey = sourceKust + "→" + targetKust
 		}
-		if seen[pairKey] {
+		dedupKey := pairKey + "|" + label
+		if seen[dedupKey] {
 			continue
 		}
-		seen[pairKey] = true
+		seen[dedupKey] = true
 
-		edgeID := fmt.Sprintf("xc:%s->%s", targetKust, sourceKust)
+		edgeID := fmt.Sprintf("xc-se:%s->%s:%s", targetKust, sourceKust, label)
 		edges = append(edges, FlowEdge{
 			ID:           edgeID,
 			Source:       targetKust,
 			Target:       sourceKust,
 			CrossCluster: true,
+			Label:        label,
 		})
 	}
 
+	return edges
+}
+
+// discoverCiliumMeshEdges finds Services annotated
+// `service.cilium.io/global=true` and pairs each with the matching
+// Service of the same name+namespace in another cluster, producing one
+// cross-cluster edge per pair labeled with `<name>.<namespace>`.
+//
+// Cilium ClusterMesh aggregates remote endpoints into the local
+// (selectorless or stub) Service via a name+namespace match across
+// clusters whenever both sides carry the global annotation, so any
+// such pair represents a real cross-cluster traffic path independent
+// of Istio. Each edge is keyed off the kustomization that owns the
+// namespace on each side, using the same name-match heuristic as the
+// Istio cross-cluster discovery.
+func discoverCiliumMeshEdges(data *model.ClusterData, idSet map[string]bool) []FlowEdge {
+	// Index global Services by namespace/name -> []ServiceInfo
+	type svcKey struct{ ns, name string }
+	byKey := make(map[svcKey][]model.ServiceInfo)
+	for _, s := range data.Services {
+		if s.Annotations["service.cilium.io/global"] != "true" {
+			continue
+		}
+		k := svcKey{ns: s.Namespace, name: s.Name}
+		byKey[k] = append(byKey[k], s)
+	}
+
+	// Reuse the per-name kust matcher from the SE path. Local copy to
+	// avoid carrying a closure across helpers.
+	findBestKust := func(cluster, hint string) string {
+		hintLower := strings.ToLower(hint)
+		var bestID string
+		var bestScore int
+		for _, k := range data.Flux {
+			if k.Cluster != cluster {
+				continue
+			}
+			nameLower := strings.ToLower(k.Name)
+			if strings.Contains(nameLower, hintLower) {
+				score := 100 - len(nameLower)
+				if score > bestScore || bestID == "" {
+					bestScore = score
+					bestID = k.Cluster + "/" + k.Name
+				}
+			}
+		}
+		if bestID == "" {
+			for _, k := range data.Flux {
+				if k.Cluster != cluster {
+					continue
+				}
+				if strings.Contains(strings.ToLower(k.Name), "platform") {
+					bestID = k.Cluster + "/" + k.Name
+					break
+				}
+			}
+		}
+		return bestID
+	}
+
+	var edges []FlowEdge
+	seen := make(map[string]bool)
+	for k, peers := range byKey {
+		if len(peers) < 2 {
+			continue
+		}
+		// All ordered pairs (a, b) where a != b — gives one edge per
+		// direction. Cilium-mesh consumers stub the Service locally, so
+		// the directionality matches "consumer (stub) → provider (real
+		// pods)" but we emit both for visibility; the dedup below
+		// collapses the symmetric pair when both sides see each other.
+		for i, a := range peers {
+			for j, b := range peers {
+				if i == j {
+					continue
+				}
+				// Heuristic: provider is the one with a non-empty
+				// selector (real backends); consumer is selectorless or
+				// has `service.cilium.io/shared=false`.
+				provider, consumer := a, b
+				if len(a.Selector) == 0 && len(b.Selector) > 0 {
+					provider, consumer = b, a
+				}
+				if provider.Cluster == consumer.Cluster {
+					continue
+				}
+				pairKey := provider.Cluster + "→" + consumer.Cluster + ":" + k.ns + "/" + k.name
+				if seen[pairKey] {
+					continue
+				}
+				seen[pairKey] = true
+
+				hint := k.name
+				providerKust := findBestKust(provider.Cluster, hint)
+				consumerKust := findBestKust(consumer.Cluster, hint)
+				if providerKust == "" {
+					providerKust = findBestKust(provider.Cluster, k.ns)
+				}
+				if consumerKust == "" {
+					consumerKust = findBestKust(consumer.Cluster, k.ns)
+				}
+				if providerKust == "" || consumerKust == "" {
+					continue
+				}
+				if !idSet[providerKust] || !idSet[consumerKust] {
+					continue
+				}
+				label := k.name + "." + k.ns
+				edges = append(edges, FlowEdge{
+					ID:           fmt.Sprintf("xc-cm:%s->%s:%s", providerKust, consumerKust, label),
+					Source:       providerKust,
+					Target:       consumerKust,
+					CrossCluster: true,
+					Label:        label,
+				})
+			}
+		}
+	}
 	return edges
 }
 
@@ -291,6 +422,11 @@ func GenerateDependencies(data *model.ClusterData) model.DiagramResult {
 	// Discover cross-cluster edges from ServiceEntries (skip transitive reduction for these)
 	crossEdges := discoverCrossClusterEdges(data, idSet)
 	edges = append(edges, crossEdges...)
+
+	// Discover Cilium ClusterMesh per-Service edges (one per
+	// `service.cilium.io/global=true` Service paired across clusters).
+	ciliumEdges := discoverCiliumMeshEdges(data, idSet)
+	edges = append(edges, ciliumEdges...)
 
 	flowData := FlowData{Nodes: nodes, Edges: edges}
 	content, _ := json.Marshal(flowData)
