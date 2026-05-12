@@ -143,6 +143,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/diagrams", s.handleDiagrams)
 	mux.HandleFunc("GET /api/health", s.handleHealth)
+	mux.HandleFunc("GET /api/health/live", s.handleHealthLive)
 	mux.HandleFunc("GET /api/config", s.handleConfig)
 	// Prometheus scrape endpoint — no auth (cluster-internal only via the
 	// new `api` Service port; not on the public Gateway).
@@ -504,6 +505,10 @@ func (s *Server) handleDiagrams(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// handleHealth is the readiness probe: returns 503 until first refresh
+// populates s.data AND (if EAM is enabled) the DB pool can ping. pgxpool's
+// own health-check loop usually self-heals stuck connections, but if it
+// can't, dropping the pod from Service endpoints lets kubelet recover.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	hasData := len(s.data) > 0
@@ -515,6 +520,25 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.db != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
+		if err := s.db.Pool.Ping(ctx); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":"db_down"}`))
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+// handleHealthLive is the liveness probe — cheap, process-only. Kept
+// separate from /api/health so a transient DB outage drops the pod from
+// the Service via readiness without also tripping liveness and
+// restarting it while the pool's own health-check loop is mid-recovery.
+func (s *Server) handleHealthLive(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }

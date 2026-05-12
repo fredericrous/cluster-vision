@@ -48,13 +48,16 @@ spec:
             - name: api
               containerPort: {{ .Values.api.port }}
               protocol: TCP
+          # Liveness on /api/health/live (cheap, process-only) so a
+          # transient DB outage drops the pod from Service endpoints via
+          # readiness without also tripping liveness in a restart loop.
           livenessProbe:
             exec:
               command:
                 - wget
                 - -qO-
                 - --timeout=5
-                - http://localhost:{{ .Values.api.port }}/api/health
+                - http://localhost:{{ .Values.api.port }}/api/health/live
             initialDelaySeconds: 5
             periodSeconds: 15
             timeoutSeconds: 10
@@ -68,6 +71,7 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 10
             timeoutSeconds: 10
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- if .Values.dataSources }}

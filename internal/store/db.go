@@ -24,7 +24,21 @@ type DB struct {
 
 // New connects to PostgreSQL and runs migrations.
 func New(ctx context.Context, databaseURL string) (*DB, error) {
-	pool, err := pgxpool.New(ctx, databaseURL)
+	// ParseConfig so we can stamp application_name = cluster-vision before
+	// dialing — shows up in pg_stat_activity, which is how we triaged the
+	// kb-vision pool-wedge incident. pgxpool's defaults already include a
+	// 1h max connection lifetime + 1m health check loop, so we don't
+	// override those.
+	cfg, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("parsing database URL: %w", err)
+	}
+	if cfg.ConnConfig.RuntimeParams == nil {
+		cfg.ConnConfig.RuntimeParams = map[string]string{}
+	}
+	cfg.ConnConfig.RuntimeParams["application_name"] = "cluster-vision"
+
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to database: %w", err)
 	}
