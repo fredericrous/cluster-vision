@@ -10,7 +10,7 @@ on:
 jobs:
   go:
     name: Go Build & Test
-    runs-on: ubuntu-latest
+    runs-on: cluster-vision
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,7 +34,7 @@ jobs:
 
   web:
     name: Web Build & Typecheck
-    runs-on: ubuntu-latest
+    runs-on: cluster-vision
     permissions:
       contents: read
       packages: read
