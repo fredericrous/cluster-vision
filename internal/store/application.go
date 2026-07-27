@@ -13,6 +13,7 @@ import (
 type Application struct {
 	ID                        uuid.UUID  `json:"id"`
 	Name                      string     `json:"name"`
+	Slug                      string     `json:"slug"`
 	DisplayName               *string    `json:"display_name"`
 	Description               *string    `json:"description"`
 	DescriptionSource         string     `json:"description_source"`
@@ -85,7 +86,7 @@ func (db *DB) ListApplications(ctx context.Context, f ApplicationFilter) ([]Appl
 		limit = 50
 	}
 
-	query := fmt.Sprintf(`SELECT id, name, display_name, description, description_source,
+	query := fmt.Sprintf(`SELECT id, name, slug, display_name, description, description_source,
 		status, business_criticality, business_criticality_source,
 		technical_risk, technical_risk_source, technical_risk_reasoning,
 		lifecycle_phase, time_category, time_category_source, time_category_reasoning,
@@ -102,7 +103,7 @@ func (db *DB) ListApplications(ctx context.Context, f ApplicationFilter) ([]Appl
 	var apps []Application
 	for rows.Next() {
 		var a Application
-		if err := rows.Scan(&a.ID, &a.Name, &a.DisplayName, &a.Description, &a.DescriptionSource,
+		if err := rows.Scan(&a.ID, &a.Name, &a.Slug, &a.DisplayName, &a.Description, &a.DescriptionSource,
 			&a.Status, &a.BusinessCriticality, &a.BusinessCriticalitySource,
 			&a.TechnicalRisk, &a.TechnicalRiskSource, &a.TechnicalRiskReasoning,
 			&a.LifecyclePhase, &a.TimeCategory, &a.TimeCategorySource, &a.TimeCategoryReasoning,
@@ -116,13 +117,13 @@ func (db *DB) ListApplications(ctx context.Context, f ApplicationFilter) ([]Appl
 
 func (db *DB) GetApplication(ctx context.Context, id uuid.UUID) (*Application, error) {
 	var a Application
-	err := db.Pool.QueryRow(ctx, `SELECT id, name, display_name, description, description_source,
+	err := db.Pool.QueryRow(ctx, `SELECT id, name, slug, display_name, description, description_source,
 		status, business_criticality, business_criticality_source,
 		technical_risk, technical_risk_source, technical_risk_reasoning,
 		lifecycle_phase, time_category, time_category_source, time_category_reasoning,
 		end_of_life_date, tags, ai_confidence, manual_override, created_at, updated_at
 		FROM applications WHERE id = $1`, id).Scan(
-		&a.ID, &a.Name, &a.DisplayName, &a.Description, &a.DescriptionSource,
+		&a.ID, &a.Name, &a.Slug, &a.DisplayName, &a.Description, &a.DescriptionSource,
 		&a.Status, &a.BusinessCriticality, &a.BusinessCriticalitySource,
 		&a.TechnicalRisk, &a.TechnicalRiskSource, &a.TechnicalRiskReasoning,
 		&a.LifecyclePhase, &a.TimeCategory, &a.TimeCategorySource, &a.TimeCategoryReasoning,
@@ -138,13 +139,13 @@ func (db *DB) GetApplication(ctx context.Context, id uuid.UUID) (*Application, e
 
 func (db *DB) GetApplicationByName(ctx context.Context, name string) (*Application, error) {
 	var a Application
-	err := db.Pool.QueryRow(ctx, `SELECT id, name, display_name, description, description_source,
+	err := db.Pool.QueryRow(ctx, `SELECT id, name, slug, display_name, description, description_source,
 		status, business_criticality, business_criticality_source,
 		technical_risk, technical_risk_source, technical_risk_reasoning,
 		lifecycle_phase, time_category, time_category_source, time_category_reasoning,
 		end_of_life_date, tags, ai_confidence, manual_override, created_at, updated_at
 		FROM applications WHERE name = $1`, name).Scan(
-		&a.ID, &a.Name, &a.DisplayName, &a.Description, &a.DescriptionSource,
+		&a.ID, &a.Name, &a.Slug, &a.DisplayName, &a.Description, &a.DescriptionSource,
 		&a.Status, &a.BusinessCriticality, &a.BusinessCriticalitySource,
 		&a.TechnicalRisk, &a.TechnicalRiskSource, &a.TechnicalRiskReasoning,
 		&a.LifecyclePhase, &a.TimeCategory, &a.TimeCategorySource, &a.TimeCategoryReasoning,
@@ -158,26 +159,57 @@ func (db *DB) GetApplicationByName(ctx context.Context, name string) (*Applicati
 	return &a, nil
 }
 
+// Slugify derives the CI slug from a discovered application name. The slug
+// is the suite-wide join key (application-landscape, ticket-vision,
+// kb-vision), so the derivation must stay deterministic and stable.
+func Slugify(name string) string {
+	var b strings.Builder
+	prevDash := true // suppress leading dashes
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+			prevDash = false
+		case !prevDash:
+			b.WriteByte('-')
+			prevDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
 func (db *DB) CreateApplication(ctx context.Context, a *Application) error {
 	if a.ID == uuid.Nil {
 		a.ID = uuid.New()
+	}
+	if a.Slug == "" {
+		a.Slug = Slugify(a.Name)
+	}
+	if a.Slug == "" {
+		a.Slug = a.ID.String()[:8]
 	}
 	now := time.Now()
 	a.CreatedAt = now
 	a.UpdatedAt = now
 
 	_, err := db.Pool.Exec(ctx, `INSERT INTO applications
-		(id, name, display_name, description, description_source, status,
+		(id, name, slug, display_name, description, description_source, status,
 		business_criticality, business_criticality_source,
 		technical_risk, technical_risk_source, technical_risk_reasoning,
 		lifecycle_phase, time_category, time_category_source, time_category_reasoning,
 		end_of_life_date, tags, ai_confidence, manual_override, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
-		a.ID, a.Name, a.DisplayName, a.Description, a.DescriptionSource, a.Status,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+		a.ID, a.Name, a.Slug, a.DisplayName, a.Description, a.DescriptionSource, a.Status,
 		a.BusinessCriticality, a.BusinessCriticalitySource,
 		a.TechnicalRisk, a.TechnicalRiskSource, a.TechnicalRiskReasoning,
 		a.LifecyclePhase, a.TimeCategory, a.TimeCategorySource, a.TimeCategoryReasoning,
 		a.EndOfLifeDate, a.Tags, a.AIConfidence, a.ManualOverride, a.CreatedAt, a.UpdatedAt)
+	if err != nil && strings.Contains(err.Error(), "idx_applications_slug") {
+		// Rare slug collision (two names slugify identically): suffix a
+		// short id fragment, matching the 000003 backfill convention.
+		a.Slug = a.Slug + "-" + a.ID.String()[:8]
+		return db.CreateApplication(ctx, a)
+	}
 	if err != nil {
 		return fmt.Errorf("creating application: %w", err)
 	}

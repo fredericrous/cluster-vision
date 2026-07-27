@@ -66,6 +66,7 @@ func TestRouteRegistration(t *testing.T) {
 		{"GET", "/api/eam/capabilities/tree"},
 		{"GET", "/api/eam/capabilities"},
 		{"GET", "/api/eam/graph"},
+		{"GET", "/api/eam/resolve?namespace=monitoring"},
 	}
 
 	for _, rt := range routes {
@@ -118,6 +119,17 @@ func TestMutationRoutesNotRegistered(t *testing.T) {
 				t.Errorf("%s %s returned %d, want 404/405 (mutation routes are removed)", rt.method, rt.path, w.Code)
 			}
 		})
+	}
+}
+
+func TestResolveRequiresCoordinates(t *testing.T) {
+	mux := newTestMux()
+	req := httptest.NewRequest("GET", "/api/eam/resolve", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("GET /api/eam/resolve without params = %d, want 400", w.Code)
 	}
 }
 
