@@ -35,63 +35,6 @@ func TestGetApplicationBadUUID(t *testing.T) {
 	}
 }
 
-func TestCreateApplicationBadJSON(t *testing.T) {
-	mux := newTestMux()
-	req := httptest.NewRequest("POST", "/api/eam/applications", bytes.NewBufferString("not json"))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	mux.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-}
-
-func TestCreateApplicationMissingName(t *testing.T) {
-	mux := newTestMux()
-	body, _ := json.Marshal(map[string]string{"description": "no name"})
-	req := httptest.NewRequest("POST", "/api/eam/applications", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	mux.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-
-	var errResp map[string]string
-	_ = json.Unmarshal(w.Body.Bytes(), &errResp)
-	if errResp["error"] != "name is required" {
-		t.Errorf("error = %q, want %q", errResp["error"], "name is required")
-	}
-}
-
-func TestDeleteApplicationBadUUID(t *testing.T) {
-	mux := newTestMux()
-	req := httptest.NewRequest("DELETE", "/api/eam/applications/invalid", nil)
-	w := httptest.NewRecorder()
-
-	mux.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-}
-
-func TestUpdateApplicationBadUUID(t *testing.T) {
-	mux := newTestMux()
-	req := httptest.NewRequest("PUT", "/api/eam/applications/invalid", bytes.NewBufferString("{}"))
-	w := httptest.NewRecorder()
-
-	mux.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-}
-
 func TestVersionHistoryBadUUID(t *testing.T) {
 	mux := newTestMux()
 	req := httptest.NewRequest("GET", "/api/eam/applications/not-valid/versions", nil)
@@ -116,29 +59,18 @@ func TestRouteRegistration(t *testing.T) {
 		path   string
 	}{
 		{"GET", "/api/eam/applications"},
-		{"POST", "/api/eam/applications"},
 		{"GET", "/api/eam/applications/" + uuid.New().String()},
-		{"PUT", "/api/eam/applications/" + uuid.New().String()},
-		{"DELETE", "/api/eam/applications/" + uuid.New().String()},
+		{"GET", "/api/eam/applications/" + uuid.New().String() + "/versions"},
+		{"GET", "/api/eam/applications/" + uuid.New().String() + "/k8s"},
 		{"GET", "/api/eam/components"},
-		{"POST", "/api/eam/components"},
 		{"GET", "/api/eam/capabilities/tree"},
 		{"GET", "/api/eam/capabilities"},
-		{"POST", "/api/eam/capabilities"},
-		{"GET", "/api/eam/landscape"},
-		{"GET", "/api/eam/roadmap"},
 		{"GET", "/api/eam/graph"},
 	}
 
 	for _, rt := range routes {
 		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
-			var body *bytes.Buffer
-			if rt.method == "POST" || rt.method == "PUT" {
-				body = bytes.NewBufferString("{}")
-			} else {
-				body = &bytes.Buffer{}
-			}
-			req := httptest.NewRequest(rt.method, rt.path, body)
+			req := httptest.NewRequest(rt.method, rt.path, &bytes.Buffer{})
 			w := httptest.NewRecorder()
 
 			// Use recover to handle nil DB panics — we just want to confirm route exists
@@ -155,46 +87,58 @@ func TestRouteRegistration(t *testing.T) {
 	}
 }
 
-func TestComponentBadUUID(t *testing.T) {
+// The authoring surface moved to application-landscape; cluster-vision is a
+// read-only observed sensor. Guard against mutation routes creeping back in.
+func TestMutationRoutesNotRegistered(t *testing.T) {
 	mux := newTestMux()
 
-	for _, method := range []string{"GET", "PUT", "DELETE"} {
-		t.Run(method, func(t *testing.T) {
-			var body *bytes.Buffer
-			if method == "PUT" {
-				body = bytes.NewBufferString("{}")
-			} else {
-				body = &bytes.Buffer{}
-			}
-			req := httptest.NewRequest(method, "/api/eam/components/not-uuid", body)
+	routes := []struct {
+		method string
+		path   string
+	}{
+		{"POST", "/api/eam/applications"},
+		{"PUT", "/api/eam/applications/" + uuid.New().String()},
+		{"DELETE", "/api/eam/applications/" + uuid.New().String()},
+		{"POST", "/api/eam/components"},
+		{"PUT", "/api/eam/components/" + uuid.New().String()},
+		{"DELETE", "/api/eam/components/" + uuid.New().String()},
+		{"POST", "/api/eam/capabilities"},
+		{"PUT", "/api/eam/capabilities/" + uuid.New().String()},
+		{"DELETE", "/api/eam/capabilities/" + uuid.New().String()},
+		{"POST", "/api/eam/applications/" + uuid.New().String() + "/dependencies"},
+	}
+
+	for _, rt := range routes {
+		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
+			req := httptest.NewRequest(rt.method, rt.path, bytes.NewBufferString("{}"))
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, req)
 
-			if w.Code != http.StatusBadRequest {
-				t.Errorf("%s /api/eam/components/not-uuid = %d, want 400", method, w.Code)
+			if w.Code != http.StatusMethodNotAllowed && w.Code != http.StatusNotFound {
+				t.Errorf("%s %s returned %d, want 404/405 (mutation routes are removed)", rt.method, rt.path, w.Code)
 			}
 		})
 	}
 }
 
+func TestComponentBadUUID(t *testing.T) {
+	mux := newTestMux()
+	req := httptest.NewRequest("GET", "/api/eam/components/not-uuid", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("GET /api/eam/components/not-uuid = %d, want 400", w.Code)
+	}
+}
+
 func TestCapabilityBadUUID(t *testing.T) {
 	mux := newTestMux()
+	req := httptest.NewRequest("GET", "/api/eam/capabilities/not-uuid", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
 
-	for _, method := range []string{"GET", "PUT", "DELETE"} {
-		t.Run(method, func(t *testing.T) {
-			var body *bytes.Buffer
-			if method == "PUT" {
-				body = bytes.NewBufferString("{}")
-			} else {
-				body = &bytes.Buffer{}
-			}
-			req := httptest.NewRequest(method, "/api/eam/capabilities/not-uuid", body)
-			w := httptest.NewRecorder()
-			mux.ServeHTTP(w, req)
-
-			if w.Code != http.StatusBadRequest {
-				t.Errorf("%s /api/eam/capabilities/not-uuid = %d, want 400", method, w.Code)
-			}
-		})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("GET /api/eam/capabilities/not-uuid = %d, want 400", w.Code)
 	}
 }

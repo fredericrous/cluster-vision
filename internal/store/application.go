@@ -204,14 +204,6 @@ func (db *DB) UpdateApplication(ctx context.Context, a *Application) error {
 	return nil
 }
 
-func (db *DB) DeleteApplication(ctx context.Context, id uuid.UUID) error {
-	_, err := db.Pool.Exec(ctx, "DELETE FROM applications WHERE id = $1", id)
-	if err != nil {
-		return fmt.Errorf("deleting application: %w", err)
-	}
-	return nil
-}
-
 // UpsertApplicationByName creates or updates an application by name (for auto-discovery).
 // Returns the application and whether it was newly created.
 func (db *DB) UpsertApplicationByName(ctx context.Context, name string, update func(*Application)) (*Application, bool, error) {
