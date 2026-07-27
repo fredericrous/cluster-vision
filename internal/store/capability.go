@@ -129,26 +129,6 @@ func (db *DB) CreateCapability(ctx context.Context, c *BusinessCapability) error
 	return nil
 }
 
-func (db *DB) UpdateCapability(ctx context.Context, c *BusinessCapability) error {
-	c.UpdatedAt = time.Now()
-	_, err := db.Pool.Exec(ctx, `UPDATE business_capabilities SET
-		name=$2, description=$3, parent_id=$4, level=$5, sort_order=$6, updated_at=$7
-		WHERE id=$1`,
-		c.ID, c.Name, c.Description, c.ParentID, c.Level, c.SortOrder, c.UpdatedAt)
-	if err != nil {
-		return fmt.Errorf("updating capability: %w", err)
-	}
-	return nil
-}
-
-func (db *DB) DeleteCapability(ctx context.Context, id uuid.UUID) error {
-	_, err := db.Pool.Exec(ctx, "DELETE FROM business_capabilities WHERE id = $1", id)
-	if err != nil {
-		return fmt.Errorf("deleting capability: %w", err)
-	}
-	return nil
-}
-
 // GetCapabilityByName finds a capability by exact name match.
 func (db *DB) GetCapabilityByName(ctx context.Context, name string) (*BusinessCapability, error) {
 	var c BusinessCapability

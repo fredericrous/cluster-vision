@@ -1,11 +1,11 @@
 import { useMemo } from "react";
 import type { Route } from "./+types/circle-map";
-import { fetchDiagram } from "../../api.server";
+import { fetchDiagram } from "../api.server";
 import { pack, hierarchy } from "d3-hierarchy";
-import styles from "./eam.module.css";
+import styles from "./circle-map.module.css";
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Circle Map — Cluster Vision EAM" }];
+  return [{ title: "Circle Map — Cluster Vision" }];
 }
 
 export async function loader() {

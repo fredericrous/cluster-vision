@@ -59,14 +59,6 @@ func (db *DB) AddDependency(ctx context.Context, d *AppDependency) error {
 	return nil
 }
 
-func (db *DB) RemoveDependency(ctx context.Context, sourceID, targetID uuid.UUID) error {
-	_, err := db.Pool.Exec(ctx, "DELETE FROM app_dependencies WHERE source_app_id = $1 AND target_app_id = $2", sourceID, targetID)
-	if err != nil {
-		return fmt.Errorf("removing dependency: %w", err)
-	}
-	return nil
-}
-
 // App-Component links
 
 func (db *DB) ListAppComponents(ctx context.Context, appID uuid.UUID) ([]ITComponent, error) {
@@ -88,22 +80,6 @@ func (db *DB) ListAppComponents(ctx context.Context, appID uuid.UUID) ([]ITCompo
 		components = append(components, c)
 	}
 	return components, nil
-}
-
-func (db *DB) LinkAppComponent(ctx context.Context, appID, componentID uuid.UUID) error {
-	_, err := db.Pool.Exec(ctx, `INSERT INTO app_components (app_id, component_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, appID, componentID)
-	if err != nil {
-		return fmt.Errorf("linking app component: %w", err)
-	}
-	return nil
-}
-
-func (db *DB) UnlinkAppComponent(ctx context.Context, appID, componentID uuid.UUID) error {
-	_, err := db.Pool.Exec(ctx, "DELETE FROM app_components WHERE app_id = $1 AND component_id = $2", appID, componentID)
-	if err != nil {
-		return fmt.Errorf("unlinking app component: %w", err)
-	}
-	return nil
 }
 
 // App-Capability links
@@ -132,14 +108,6 @@ func (db *DB) LinkAppCapability(ctx context.Context, appID, capabilityID uuid.UU
 	_, err := db.Pool.Exec(ctx, `INSERT INTO app_capabilities (app_id, capability_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, appID, capabilityID)
 	if err != nil {
 		return fmt.Errorf("linking app capability: %w", err)
-	}
-	return nil
-}
-
-func (db *DB) UnlinkAppCapability(ctx context.Context, appID, capabilityID uuid.UUID) error {
-	_, err := db.Pool.Exec(ctx, "DELETE FROM app_capabilities WHERE app_id = $1 AND capability_id = $2", appID, capabilityID)
-	if err != nil {
-		return fmt.Errorf("unlinking app capability: %w", err)
 	}
 	return nil
 }

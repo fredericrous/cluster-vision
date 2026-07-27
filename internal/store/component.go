@@ -93,14 +93,6 @@ func (db *DB) UpdateComponent(ctx context.Context, c *ITComponent) error {
 	return nil
 }
 
-func (db *DB) DeleteComponent(ctx context.Context, id uuid.UUID) error {
-	_, err := db.Pool.Exec(ctx, "DELETE FROM it_components WHERE id = $1", id)
-	if err != nil {
-		return fmt.Errorf("deleting component: %w", err)
-	}
-	return nil
-}
-
 // UpsertComponentByNameType creates or updates a component by name+type (for auto-discovery).
 func (db *DB) UpsertComponentByNameType(ctx context.Context, name, cType string, update func(*ITComponent)) (*ITComponent, bool, error) {
 	var c ITComponent
