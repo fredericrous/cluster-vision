@@ -10,6 +10,7 @@ import (
 type GraphNode struct {
 	ID            uuid.UUID `json:"id"`
 	Name          string    `json:"name"`
+	Slug          string    `json:"slug"`
 	DisplayName   *string   `json:"display_name"`
 	Status        string    `json:"status"`
 	TechnicalRisk string    `json:"technical_risk"`
@@ -48,6 +49,7 @@ func (h *Handler) getGraph(w http.ResponseWriter, r *http.Request) {
 		node := GraphNode{
 			ID:            app.ID,
 			Name:          app.Name,
+			Slug:          app.Slug,
 			DisplayName:   app.DisplayName,
 			Status:        app.Status,
 			TechnicalRisk: app.TechnicalRisk,

@@ -46,4 +46,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// Aggregated views
 	mux.HandleFunc("GET /api/eam/graph", h.getGraph)
+
+	// Coordinate → CI slug resolution
+	mux.HandleFunc("GET /api/eam/resolve", h.resolveCI)
 }
