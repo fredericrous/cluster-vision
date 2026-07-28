@@ -11,7 +11,7 @@ import (
 func strPtr(s string) *string { return &s }
 
 func TestMapClusterData(t *testing.T) {
-	t.Run("helm releases produce apps and components", func(t *testing.T) {
+	t.Run("helm releases produce apps", func(t *testing.T) {
 		data := &model.ClusterData{
 			HelmReleases: []model.HelmReleaseInfo{
 				{Name: "grafana", Namespace: "monitoring", Cluster: "homelab", ChartName: "grafana", Version: "7.0.0"},
@@ -24,7 +24,7 @@ func TestMapClusterData(t *testing.T) {
 			},
 		}
 
-		apps, components := MapClusterData(data)
+		apps := MapClusterData(data)
 		if len(apps) != 1 {
 			t.Fatalf("expected 1 app, got %d", len(apps))
 		}
@@ -43,24 +43,35 @@ func TestMapClusterData(t *testing.T) {
 		if len(apps[0].Images) != 1 || apps[0].Images[0] != "grafana/grafana:10.0.0" {
 			t.Errorf("images = %v, want [grafana/grafana:10.0.0]", apps[0].Images)
 		}
-		if len(components) != 1 {
-			t.Fatalf("expected 1 component, got %d", len(components))
-		}
-		if components[0].Type != "compute" {
-			t.Errorf("component type = %q, want %q", components[0].Type, "compute")
-		}
 	})
 
 	t.Run("empty ClusterData returns empty results", func(t *testing.T) {
 		data := &model.ClusterData{}
-		apps, components := MapClusterData(data)
+		apps := MapClusterData(data)
 		if len(apps) != 0 {
 			t.Errorf("expected 0 apps, got %d", len(apps))
 		}
-		if len(components) != 0 {
-			t.Errorf("expected 0 components, got %d", len(components))
-		}
 	})
+}
+
+// Infrastructure is context for a CI, not a peer CI: nodes and storage classes
+// were once mapped into it_components, duplicating what the core Nodes/Storage
+// views already render live. Guards against reintroducing that write path.
+func TestInfrastructureAloneYieldsNoCIs(t *testing.T) {
+	data := &model.ClusterData{
+		Nodes: []model.NodeInfo{
+			{Name: "node-1", Cluster: "homelab", KubeletVersion: "v1.30.0", Platform: "proxmox"},
+			{Name: "node-2", Cluster: "homelab", KubeletVersion: "v1.30.0"},
+		},
+		Storage: []model.StorageInfo{
+			{Name: "ceph-block", Kind: "StorageClass"},
+			{Name: "my-pvc", Kind: "PersistentVolumeClaim"},
+		},
+	}
+
+	if apps := MapClusterData(data); len(apps) != 0 {
+		t.Errorf("nodes/storage produced %d CIs, want 0 — infrastructure is an attribute of an app, not its own CI", len(apps))
+	}
 }
 
 func TestMapHelmReleases(t *testing.T) {
@@ -142,50 +153,6 @@ func TestMapStandaloneWorkloads(t *testing.T) {
 		}
 		if apps[0].Name != "orphan-deploy" {
 			t.Errorf("name = %q, want %q", apps[0].Name, "orphan-deploy")
-		}
-	})
-}
-
-func TestMapComponents(t *testing.T) {
-	t.Run("nodes become compute, storage classes become storage", func(t *testing.T) {
-		data := &model.ClusterData{
-			Nodes: []model.NodeInfo{
-				{Name: "node-1", KubeletVersion: "v1.30.0", Platform: "proxmox"},
-				{Name: "node-2", KubeletVersion: "v1.30.0", Platform: ""},
-			},
-			Storage: []model.StorageInfo{
-				{Name: "ceph-block", Kind: "StorageClass"},
-				{Name: "ceph-block", Kind: "StorageClass"}, // duplicate
-				{Name: "my-pvc", Kind: "PersistentVolumeClaim"},
-			},
-		}
-
-		comps := mapComponents(data)
-		// 2 compute + 1 storage (deduped)
-		if len(comps) != 3 {
-			t.Fatalf("expected 3 components, got %d", len(comps))
-		}
-
-		compute := 0
-		storage := 0
-		for _, c := range comps {
-			switch c.Type {
-			case "compute":
-				compute++
-			case "storage":
-				storage++
-			}
-		}
-		if compute != 2 {
-			t.Errorf("expected 2 compute, got %d", compute)
-		}
-		if storage != 1 {
-			t.Errorf("expected 1 storage, got %d", storage)
-		}
-
-		// Check provider fallback to cluster name
-		if comps[0].Provider != nil && *comps[0].Provider != "proxmox" {
-			t.Errorf("node-1 provider = %q, want %q", *comps[0].Provider, "proxmox")
 		}
 	})
 }

@@ -22,22 +22,19 @@ type DiscoveredApp struct {
 	VulnHigh     int
 }
 
-// DiscoveredComponent holds a mapped IT component from K8s data.
-type DiscoveredComponent struct {
-	Name     string
-	Type     string // "compute", "storage", etc.
-	Version  *string
-	Provider *string
-}
-
 // MapClusterData extracts EAM entities from parsed ClusterData.
-func MapClusterData(data *model.ClusterData) ([]DiscoveredApp, []DiscoveredComponent) {
+//
+// Applications only. Nodes and StorageClasses were once mapped into
+// it_components, but that persisted a second, staler copy of what the core
+// Nodes and Storage views already render live from ClusterData (with kubelet
+// version and CVE enrichment this copy never carried) — and nothing read it.
+// Where an app runs is an attribute of the app, carried on k8s_sources; a node
+// is context for a CI, not a peer CI.
+func MapClusterData(data *model.ClusterData) []DiscoveredApp {
 	apps := mapHelmReleases(data)
 	apps = append(apps, mapStandaloneWorkloads(data, apps)...)
 	enrichWithVulns(apps, data.ImageVulns)
-
-	components := mapComponents(data)
-	return apps, components
+	return apps
 }
 
 func mapHelmReleases(data *model.ClusterData) []DiscoveredApp {
@@ -115,40 +112,6 @@ func mapStandaloneWorkloads(data *model.ClusterData, helmApps []DiscoveredApp) [
 		})
 	}
 	return apps
-}
-
-func mapComponents(data *model.ClusterData) []DiscoveredComponent {
-	var components []DiscoveredComponent
-
-	// Nodes → compute components
-	for _, n := range data.Nodes {
-		ver := n.KubeletVersion
-		provider := n.Platform
-		if provider == "" {
-			provider = n.Cluster
-		}
-		components = append(components, DiscoveredComponent{
-			Name:     n.Name,
-			Type:     "compute",
-			Version:  &ver,
-			Provider: &provider,
-		})
-	}
-
-	// StorageClasses → storage components
-	seen := make(map[string]bool)
-	for _, s := range data.Storage {
-		if s.Kind != "StorageClass" || seen[s.Name] {
-			continue
-		}
-		seen[s.Name] = true
-		components = append(components, DiscoveredComponent{
-			Name: s.Name,
-			Type: "storage",
-		})
-	}
-
-	return components
 }
 
 func enrichWithVulns(apps []DiscoveredApp, vulns []model.ImageVuln) {

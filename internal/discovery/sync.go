@@ -20,10 +20,9 @@ func NewSyncer(db *store.DB) *Syncer {
 
 // SyncResult holds counts from a sync operation.
 type SyncResult struct {
-	AppsCreated       int
-	AppsUpdated       int
-	ComponentsCreated int
-	Errors            []string
+	AppsCreated int
+	AppsUpdated int
+	Errors      []string
 }
 
 // Sync maps ClusterData to EAM entities and persists them.
@@ -37,7 +36,7 @@ func (s *Syncer) Sync(ctx context.Context, data *model.ClusterData) *SyncResult 
 		return result
 	}
 
-	apps, components := MapClusterData(data)
+	apps := MapClusterData(data)
 
 	// Sync applications
 	for _, da := range apps {
@@ -89,26 +88,9 @@ func (s *Syncer) Sync(ctx context.Context, data *model.ClusterData) *SyncResult 
 		}
 	}
 
-	// Sync IT components
-	for _, dc := range components {
-		_, created, err := s.db.UpsertComponentByNameType(ctx, dc.Name, dc.Type, func(c *store.ITComponent) {
-			c.Version = dc.Version
-			c.Provider = dc.Provider
-		})
-		if err != nil {
-			slog.Error("failed to upsert component", "name", dc.Name, "error", err)
-			result.Errors = append(result.Errors, err.Error())
-			continue
-		}
-		if created {
-			result.ComponentsCreated++
-		}
-	}
-
 	// Finish sync log
 	syncLog.AppsCreated = result.AppsCreated
 	syncLog.AppsUpdated = result.AppsUpdated
-	syncLog.ComponentsCreated = result.ComponentsCreated
 	syncLog.Errors = result.Errors
 	if err := s.db.FinishSyncLog(ctx, syncLog); err != nil {
 		slog.Error("failed to finish sync log", "error", err)
@@ -117,7 +99,6 @@ func (s *Syncer) Sync(ctx context.Context, data *model.ClusterData) *SyncResult 
 	slog.Info("EAM sync complete",
 		"apps_created", result.AppsCreated,
 		"apps_updated", result.AppsUpdated,
-		"components_created", result.ComponentsCreated,
 		"errors", len(result.Errors))
 
 	return result
