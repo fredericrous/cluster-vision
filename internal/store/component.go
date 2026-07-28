@@ -1,5 +1,11 @@
 package store
 
+// it_components is READ-ONLY at runtime. The authoring API was removed when
+// cluster-vision became the observed sensor, and infrastructure is no longer
+// mapped into components (a node is context for a CI, not a peer CI), so
+// nothing writes this table. The read paths stay: they are part of the
+// published federation contract and answer "no components tracked" honestly.
+
 import (
 	"context"
 	"fmt"
@@ -63,63 +69,4 @@ func (db *DB) GetComponent(ctx context.Context, id uuid.UUID) (*ITComponent, err
 		return nil, fmt.Errorf("getting component: %w", err)
 	}
 	return &c, nil
-}
-
-func (db *DB) CreateComponent(ctx context.Context, c *ITComponent) error {
-	if c.ID == uuid.Nil {
-		c.ID = uuid.New()
-	}
-	now := time.Now()
-	c.CreatedAt = now
-	c.UpdatedAt = now
-	_, err := db.Pool.Exec(ctx, `INSERT INTO it_components (id, name, type, version, provider, description, status, tags, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-		c.ID, c.Name, c.Type, c.Version, c.Provider, c.Description, c.Status, c.Tags, c.CreatedAt, c.UpdatedAt)
-	if err != nil {
-		return fmt.Errorf("creating component: %w", err)
-	}
-	return nil
-}
-
-func (db *DB) UpdateComponent(ctx context.Context, c *ITComponent) error {
-	c.UpdatedAt = time.Now()
-	_, err := db.Pool.Exec(ctx, `UPDATE it_components SET
-		name=$2, type=$3, version=$4, provider=$5, description=$6, status=$7, tags=$8, updated_at=$9
-		WHERE id=$1`,
-		c.ID, c.Name, c.Type, c.Version, c.Provider, c.Description, c.Status, c.Tags, c.UpdatedAt)
-	if err != nil {
-		return fmt.Errorf("updating component: %w", err)
-	}
-	return nil
-}
-
-// UpsertComponentByNameType creates or updates a component by name+type (for auto-discovery).
-func (db *DB) UpsertComponentByNameType(ctx context.Context, name, cType string, update func(*ITComponent)) (*ITComponent, bool, error) {
-	var c ITComponent
-	err := db.Pool.QueryRow(ctx, `SELECT id, name, type, version, provider, description, status, tags, created_at, updated_at
-		FROM it_components WHERE name = $1 AND type = $2`, name, cType).Scan(
-		&c.ID, &c.Name, &c.Type, &c.Version, &c.Provider, &c.Description,
-		&c.Status, &c.Tags, &c.CreatedAt, &c.UpdatedAt)
-	if err == pgx.ErrNoRows {
-		c = ITComponent{
-			Name:   name,
-			Type:   cType,
-			Status: "active",
-			Tags:   []string{},
-		}
-		update(&c)
-		if err := db.CreateComponent(ctx, &c); err != nil {
-			return nil, false, err
-		}
-		return &c, true, nil
-	}
-	if err != nil {
-		return nil, false, fmt.Errorf("looking up component: %w", err)
-	}
-
-	update(&c)
-	if err := db.UpdateComponent(ctx, &c); err != nil {
-		return nil, false, err
-	}
-	return &c, false, nil
 }
