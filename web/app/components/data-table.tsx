@@ -102,12 +102,24 @@ export function DataTable<T>({
         </div>
       )}
 
-      <Table.Root columns={table.getHeaderGroups()[0]?.headers.length ?? 0} size="sm">
+      {/* No `columns` prop since @duro-app/ui 0.41 — Root derives its grid
+          template from the header cells it actually renders. */}
+      <Table.Root size="sm">
         <Table.Header>
           {table.getHeaderGroups().map((headerGroup) => (
             <Table.Row key={headerGroup.id}>
+              {/* The header is always wrapped in a sortable <span>, so it
+                  never has a plain-text fallback for stack mode — hand the
+                  column's own string header over as `label`. */}
               {headerGroup.headers.map((header) => (
-                <Table.HeaderCell key={header.id}>
+                <Table.HeaderCell
+                  key={header.id}
+                  label={
+                    typeof header.column.columnDef.header === "string"
+                      ? header.column.columnDef.header
+                      : header.column.id
+                  }
+                >
                   <span
                     className={styles.sortableHeader}
                     onClick={header.column.getToggleSortingHandler()}
