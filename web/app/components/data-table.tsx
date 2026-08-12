@@ -5,16 +5,29 @@ import {
   getFilteredRowModel,
   getSortedRowModel,
   flexRender,
+  type Column,
   type ColumnDef,
   type SortingState,
   type ColumnFiltersState,
 } from "@tanstack/react-table";
-import { Badge, Select, Table, Tooltip } from "@duro-app/ui";
-import styles from "./data-table.module.css";
+import {
+  Badge,
+  Button,
+  Cluster,
+  Inline,
+  Select,
+  Stack,
+  Text,
+  Tooltip,
+} from "@duro-app/ui";
+import { Table } from "@duro-app/ui/table";
 
 declare module "@tanstack/react-table" {
   interface ColumnMeta<TData extends unknown, TValue> {
-    className?: string;
+    /** grid-template-columns track for this column, e.g. 'minmax(200px, 400px)'. */
+    width?: string;
+    /** Clip overflowing cell text to a single line with an ellipsis. */
+    truncate?: boolean;
   }
 }
 
@@ -60,18 +73,18 @@ export function DataTable<T>({
   }, [data, filterColumns]);
 
   return (
-    <div className={styles.wrapper}>
+    <Stack gap="md">
       {filterColumns.length > 0 && (
-        <div className={styles.filters}>
+        <Cluster gap="ms" align="center">
           {filterColumns.map((colId) => {
             const column = table.getColumn(colId);
             if (!column) return null;
             const currentValue = (column.getFilterValue() as string) ?? "";
             return (
-              <div key={colId} className={styles.filterGroup}>
-                <label className={styles.filterLabel}>
+              <Inline key={colId} gap="xs" align="center">
+                <Text variant="caption" color="muted" weight="medium">
                   {column.columnDef.header as string}
-                </label>
+                </Text>
                 <Select.Root
                   value={currentValue}
                   onValueChange={(v) =>
@@ -93,59 +106,86 @@ export function DataTable<T>({
                     ))}
                   </Select.Popup>
                 </Select.Root>
-              </div>
+              </Inline>
             );
           })}
-          <span className={styles.rowCount}>
+          <Text variant="caption" color="muted">
             {table.getFilteredRowModel().rows.length} of {data.length} rows
-          </span>
-        </div>
+          </Text>
+        </Cluster>
       )}
 
-      <Table.Root columns={table.getHeaderGroups()[0]?.headers.length ?? 0} size="sm">
+      <Table.Root size="sm">
         <Table.Header>
           {table.getHeaderGroups().map((headerGroup) => (
             <Table.Row key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <Table.HeaderCell key={header.id}>
-                  <span
-                    className={styles.sortableHeader}
-                    onClick={header.column.getToggleSortingHandler()}
+              {headerGroup.headers.map((header) => {
+                const label =
+                  typeof header.column.columnDef.header === "string"
+                    ? header.column.columnDef.header
+                    : header.id;
+                return (
+                  <Table.HeaderCell
+                    key={header.id}
+                    label={label}
+                    width={header.column.columnDef.meta?.width}
                   >
-                    {flexRender(
-                      header.column.columnDef.header,
-                      header.getContext()
-                    )}
-                    <span className={styles.sortIndicator}>
-                      {{ asc: " ▲", desc: " ▼" }[
-                        header.column.getIsSorted() as string
-                      ] ?? ""}
-                    </span>
-                  </span>
-                </Table.HeaderCell>
-              ))}
+                    <SortableHeader column={header.column}>
+                      {flexRender(
+                        header.column.columnDef.header,
+                        header.getContext()
+                      )}
+                    </SortableHeader>
+                  </Table.HeaderCell>
+                );
+              })}
             </Table.Row>
           ))}
         </Table.Header>
         <Table.Body>
           {table.getRowModel().rows.map((row) => (
             <Table.Row key={row.id}>
-              {row.getVisibleCells().map((cell) => (
-                <Table.Cell key={cell.id}>
-                  {cell.column.columnDef.meta?.className ? (
-                    <span className={cell.column.columnDef.meta.className}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </span>
-                  ) : (
-                    flexRender(cell.column.columnDef.cell, cell.getContext())
-                  )}
-                </Table.Cell>
-              ))}
+              {row.getVisibleCells().map((cell) => {
+                const content = flexRender(
+                  cell.column.columnDef.cell,
+                  cell.getContext()
+                );
+                return (
+                  <Table.Cell key={cell.id}>
+                    {cell.column.columnDef.meta?.truncate ? (
+                      <Text truncate>{content}</Text>
+                    ) : (
+                      content
+                    )}
+                  </Table.Cell>
+                );
+              })}
             </Table.Row>
           ))}
         </Table.Body>
       </Table.Root>
-    </div>
+    </Stack>
+  );
+}
+
+/** Column header that toggles sorting. Table.HeaderCell has no onClick, so the
+ *  affordance is a link-style Button — which also makes it keyboard-operable,
+ *  unlike the click-only <span> this replaced. */
+function SortableHeader<T>({
+  column,
+  children,
+}: {
+  column: Column<T, unknown>;
+  children: React.ReactNode;
+}) {
+  if (!column.getCanSort()) return <>{children}</>;
+  return (
+    <Button variant="link" size="small" onClick={() => column.toggleSorting()}>
+      <Inline gap="xs" align="center">
+        {children}
+        <Table.SortIndicator column={column} />
+      </Inline>
+    </Button>
   );
 }
 

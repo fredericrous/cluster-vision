@@ -5,8 +5,8 @@
 
 .sidebar {
   width: 220px;
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
+  background: var(--duro-color-bg-card);
+  border-right: 1px solid var(--duro-color-border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -16,21 +16,14 @@
 }
 
 .header {
-  padding: 1.25rem 1rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  padding: 1.25rem var(--duro-spacing-md);
+  border-bottom: 1px solid var(--duro-color-border);
 }
 
 .navScroll {
   flex: 1;
   overflow-y: auto;
-  padding-bottom: 0.5rem;
+  padding-bottom: var(--duro-spacing-sm);
 }
 
 .content {
@@ -50,7 +43,7 @@
     height: auto;
     position: static;
     border-right: none;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--duro-color-border);
   }
 
   .navScroll {

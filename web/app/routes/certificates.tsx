@@ -4,7 +4,7 @@ import { fetchDiagram } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
 import { DataTable, BooleanBadge } from "../components/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Badge } from "@duro-app/ui";
+import { Badge, Text } from "@duro-app/ui";
 
 interface CertificateRow {
   name: string;
@@ -33,7 +33,7 @@ function ExpiryBadge({ days, level }: { days: number; level: string }) {
     return <Badge variant="error" size="sm">{days}d</Badge>;
   if (level === "warning")
     return <Badge variant="warning" size="sm">{days}d</Badge>;
-  return <span>{days}d</span>;
+  return <Text>{days}d</Text>;
 }
 
 const columns: ColumnDef<CertificateRow, string>[] = [

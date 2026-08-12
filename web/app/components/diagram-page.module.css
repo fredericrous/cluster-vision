@@ -1,50 +1,30 @@
 .page {
   max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--duro-spacing-lg);
 }
 
 .flowPage {
   max-width: 100%;
   display: flex;
   flex-direction: column;
+  gap: var(--duro-spacing-lg);
   height: calc(100vh - 4rem);
 }
 
-.header {
-  display: flex;
-  align-items: baseline;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-
-.heading {
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin: 0;
-}
-
-.generatedAt {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
-
 .content {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1.5rem;
+  background: var(--duro-color-bg-card);
+  border: 1px solid var(--duro-color-border);
+  border-radius: var(--duro-radius-sm);
+  padding: var(--duro-spacing-lg);
 }
 
 .flowContent {
   flex: 1;
   min-height: 0;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  background: var(--duro-color-bg-card);
+  border: 1px solid var(--duro-color-border);
+  border-radius: var(--duro-radius-sm);
   position: relative;
-}
-
-.loading {
-  color: var(--text-muted);
-  padding: 2rem;
-  text-align: center;
 }

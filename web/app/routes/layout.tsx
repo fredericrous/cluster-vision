@@ -1,5 +1,5 @@
 import { Outlet, useLocation, useNavigate } from "react-router";
-import { SideNav } from "@duro-app/ui";
+import { Heading, SideNav } from "@duro-app/ui";
 import styles from "./layout.module.css";
 
 interface NavItem {
@@ -96,7 +96,9 @@ export default function AppLayout() {
     <div className={styles.layout}>
       <div className={styles.sidebar}>
         <div className={styles.header}>
-          <h2 className={styles.title}>Cluster Vision</h2>
+          <Heading level={2} variant="headingSm">
+            Cluster Vision
+          </Heading>
         </div>
         <div className={styles.navScroll}>
           <SideNav.Root value={activeTab} onValueChange={(v) => navigate(v)}>

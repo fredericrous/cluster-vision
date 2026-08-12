@@ -1,6 +1,7 @@
 import type { Route } from "./+types/topology";
 import { fetchDiagramsByPrefix } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
+import { Text } from "@duro-app/ui";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "Topology — Cluster Vision" }];
@@ -14,7 +15,7 @@ export default function Topology({ loaderData }: Route.ComponentProps) {
   const { diagrams, generatedAt } = loaderData;
 
   if (diagrams.length === 0) {
-    return <p>No topology data available.</p>;
+    return <Text>No topology data available.</Text>;
   }
 
   return (

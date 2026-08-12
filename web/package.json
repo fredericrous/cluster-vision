@@ -7,13 +7,14 @@
     "dev": "react-router dev",
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc",
+    "lint": "eslint app",
     "test": "vitest",
     "test:run": "vitest run"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
     "@dagrejs/dagre": "^2.0.4",
-    "@duro-app/ui": "^0.18.0",
+    "@duro-app/ui": "^1.0.0",
     "@hookform/resolvers": "^5.2.2",
     "@jalez/react-flow-smart-edge": "^4.0.0",
     "@react-router/node": "^7.13.1",
@@ -32,6 +33,7 @@
     "react-strict-dom": "^0.0.55"
   },
   "devDependencies": {
+    "@duro-app/eslint-plugin": "^1.0.0",
     "@react-router/dev": "^7.13.1",
     "@rolldown/plugin-babel": "^0.2.2",
     "@testing-library/dom": "^10.4.1",
@@ -41,8 +43,10 @@
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "@typescript-eslint/parser": "^8.0.0",
     "@vitejs/plugin-react": "^6.0.1",
     "babel-plugin-react-compiler": "^1.0.0",
+    "eslint": "^9.0.0",
     "happy-dom": "^20.8.4",
     "msw": "^2.12.10",
     "typescript": "^5.9.2",

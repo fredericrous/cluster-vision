@@ -28,8 +28,11 @@ describe("CircleMap", () => {
 
   it("renders a circle per layer and per node", () => {
     const { container } = renderCircleMap();
+    // Scoped to the pack layout's own svg — the legend below it draws one
+    // swatch circle per layer colour, which is not part of the map.
+    const map = container.querySelector("svg[viewBox]");
     // 3 nodes + 3 layer groups (root circle is skipped)
-    expect(container.querySelectorAll("circle").length).toBe(6);
+    expect(map?.querySelectorAll("circle").length).toBe(6);
   });
 
   it("labels the layer groups", () => {

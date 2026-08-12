@@ -1,3 +1,5 @@
+/* Host element for a mermaid-rendered SVG (set via innerHTML), so it stays a
+   raw div with a class rather than an html.* element. */
 .container {
   display: flex;
   justify-content: center;
@@ -6,17 +8,4 @@
 .container :global(svg) {
   max-width: 100%;
   height: auto;
-}
-
-.error {
-  background: var(--danger-dim);
-  border: 1px solid var(--danger);
-  border-radius: var(--radius);
-  padding: 1rem;
-}
-
-.error pre {
-  font-size: 0.75rem;
-  overflow-x: auto;
-  color: var(--text-secondary);
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { Badge, Stack, Table } from "@duro-app/ui";
 import styles from "./markdown-table.module.css";
 
 interface MarkdownTableProps {
@@ -11,7 +12,7 @@ export function MarkdownTable({ content }: MarkdownTableProps) {
   // Find the table portion (lines starting with |)
   const tableLines = lines.filter((l) => l.trim().startsWith("|"));
   if (tableLines.length < 2) {
-    return <pre className={styles.raw}>{content}</pre>;
+    return <pre>{content}</pre>;
   }
 
   const parseRow = (line: string) =>
@@ -35,37 +36,41 @@ export function MarkdownTable({ content }: MarkdownTableProps) {
       : null;
 
   return (
-    <div className={styles.wrapper}>
-      <table className={styles.table}>
-        <thead>
-          <tr>
+    <Stack gap="lg">
+      <Table.Root size="sm">
+        <Table.Header>
+          <Table.Row>
             {headers.map((h, i) => (
-              <th key={i}>{h}</th>
+              <Table.HeaderCell key={i}>{h}</Table.HeaderCell>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </Table.Row>
+        </Table.Header>
+        <Table.Body>
           {rows.map((row, ri) => (
-            <tr key={ri}>
+            <Table.Row key={ri}>
               {row.map((cell, ci) => (
-                <td key={ci}>
+                <Table.Cell key={ci}>
                   {cell === "yes" ? (
-                    <span className={styles.badgeYes}>yes</span>
+                    <Badge variant="success" size="sm">
+                      yes
+                    </Badge>
                   ) : cell === "no" ? (
-                    <span className={styles.badgeNo}>no</span>
+                    <Badge variant="default" size="sm">
+                      no
+                    </Badge>
                   ) : (
                     cell
                   )}
-                </td>
+                </Table.Cell>
               ))}
-            </tr>
+            </Table.Row>
           ))}
-        </tbody>
-      </table>
+        </Table.Body>
+      </Table.Root>
       {mermaidContent && (
         <MermaidInline content={mermaidContent} id="security-pie" />
       )}
-    </div>
+    </Stack>
   );
 }
 
