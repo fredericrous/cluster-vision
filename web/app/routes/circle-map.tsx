@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { Route } from "./+types/circle-map";
 import { fetchDiagram } from "../api.server";
 import { pack, hierarchy } from "d3-hierarchy";
+import { Cluster, Heading, Inline, Stack, Text } from "@duro-app/ui";
 import styles from "./circle-map.module.css";
 
 export function meta({}: Route.MetaArgs) {
@@ -89,18 +90,34 @@ export default function CircleMap({ loaderData }: Route.ComponentProps) {
   }, [diagram]);
 
   if (!circleData) {
-    return <div className={styles.page}><h1 className={styles.heading}>Circle Map</h1><p>No flow data available.</p></div>;
+    return (
+      <Stack gap="xs">
+        <Heading level={1} variant="headingMd">
+          Circle Map
+        </Heading>
+        <Text>No flow data available.</Text>
+      </Stack>
+    );
   }
 
   const { packed, width, height } = circleData;
 
   return (
-    <div className={styles.page}>
-      <h1 className={styles.heading}>Circle Map</h1>
-      <p className={styles.subtitle}>
-        Flux kustomization layers as nested circles. Size proportional to dependency count.
-      </p>
+    <Stack gap="lg">
+      <Stack gap="xs">
+        <Heading level={1} variant="headingMd">
+          Circle Map
+        </Heading>
+        <Text variant="bodySm" color="muted">
+          Flux kustomization layers as nested circles. Size proportional to
+          dependency count.
+        </Text>
+      </Stack>
 
+      {/* Raw div/svg: d3-hierarchy drives an SVG scene graph, which
+          react-strict-dom has no primitives for (SVG subtrees are exempt from
+          duro/no-raw-html-element; the sized host div is allow-listed for this
+          file in eslint.config.js). */}
       <div className={styles.circleMapContainer}>
         <svg className={styles.circleMapSvg} viewBox={`0 0 ${width} ${height}`}>
           {packed.descendants().map((node, i) => {
@@ -143,14 +160,20 @@ export default function CircleMap({ loaderData }: Route.ComponentProps) {
       </div>
 
       {/* Legend */}
-      <div style={{ display: "flex", gap: "1rem", marginTop: "1rem", flexWrap: "wrap" }}>
+      <Cluster gap="md" align="center">
         {Object.entries(LAYER_COLORS).map(([layer, color]) => (
-          <div key={layer} style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
-            <span style={{ width: 12, height: 12, borderRadius: "50%", background: color, display: "inline-block" }} />
-            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{layer}</span>
-          </div>
+          <Inline key={layer} gap="xs" align="center">
+            {/* SVG swatch: the colour is data-driven (per-layer palette), so it
+                cannot be a static token-backed style. */}
+            <svg width={12} height={12} aria-hidden="true">
+              <circle cx={6} cy={6} r={6} fill={color} />
+            </svg>
+            <Text variant="caption" color="muted">
+              {layer}
+            </Text>
+          </Inline>
         ))}
-      </div>
-    </div>
+      </Cluster>
+    </Stack>
   );
 }

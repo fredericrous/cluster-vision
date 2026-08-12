@@ -1,5 +1,5 @@
 import { Suspense, lazy, type ReactNode } from "react";
-import { ScrollArea } from "@duro-app/ui";
+import { Heading, Inline, Stack, Text, ScrollArea } from "@duro-app/ui";
 import type { DiagramResult } from "../api.server";
 import styles from "./diagram-page.module.css";
 
@@ -12,6 +12,14 @@ const MarkdownTable = lazy(() =>
 const FlowDiagram = lazy(() =>
   import("./flow-diagram").then((m) => ({ default: m.FlowDiagram }))
 );
+
+function DiagramLoading() {
+  return (
+    <Stack gap="md" align="center">
+      <Text color="muted">Rendering...</Text>
+    </Stack>
+  );
+}
 
 interface DiagramPageProps {
   diagram: DiagramResult;
@@ -29,16 +37,18 @@ export function DiagramPage({
 
   return (
     <div className={isFlow ? styles.flowPage : styles.page}>
-      <div className={styles.header}>
-        <h1 className={styles.heading}>{diagram.title}</h1>
-        <span className={styles.generatedAt}>Updated: {formattedTime}</span>
-      </div>
+      <Inline gap="md" align="baseline">
+        <Heading level={1} variant="headingMd">
+          {diagram.title}
+        </Heading>
+        <Text variant="caption" color="muted">
+          Updated: {formattedTime}
+        </Text>
+      </Inline>
 
       {isFlow ? (
         <div className={styles.flowContent}>
-          <Suspense
-            fallback={<div className={styles.loading}>Rendering...</div>}
-          >
+          <Suspense fallback={<DiagramLoading />}>
             <FlowDiagram content={diagram.content} />
           </Suspense>
         </div>
@@ -47,9 +57,7 @@ export function DiagramPage({
           <ScrollArea.Root>
             <ScrollArea.Viewport>
               <ScrollArea.Content>
-                <Suspense
-                  fallback={<div className={styles.loading}>Rendering...</div>}
-                >
+                <Suspense fallback={<DiagramLoading />}>
                   {children
                     ? children
                     : diagram.type === "mermaid"

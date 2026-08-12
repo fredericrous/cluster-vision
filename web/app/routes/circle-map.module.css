@@ -1,19 +1,4 @@
-.page {
-  max-width: 1200px;
-}
-
-.heading {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin: 0 0 0.25rem;
-}
-
-.subtitle {
-  color: var(--text-secondary);
-  margin: 0 0 1.5rem;
-  font-size: 0.875rem;
-}
-
+/* Sized host for the d3-hierarchy SVG scene. */
 .circleMapContainer {
   width: 100%;
   height: calc(100vh - 160px);

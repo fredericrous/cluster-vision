@@ -1,9 +1,8 @@
 import type { Route } from "./+types/home";
 import { fetchDiagrams } from "../api.server";
-import { Card } from "@duro-app/ui";
+import { Card, Grid, Heading, Stack, Text } from "@duro-app/ui";
 import { Separator } from "@base-ui/react/separator";
 import { Link } from "react-router";
-import styles from "./home.module.css";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -152,22 +151,30 @@ export default function Home({ loaderData }: Route.ComponentProps) {
   const formattedTime = new Date(generatedAt).toLocaleString();
 
   return (
-    <div className={styles.page}>
-      <h1 className={styles.heading}>Cluster Vision</h1>
-      <p className={styles.subtitle}>
-        Auto-generated infrastructure diagrams from live Kubernetes state
-      </p>
-      <span className={styles.generatedAt}>Last refresh: {formattedTime}</span>
+    <Stack gap="lg">
+      <Stack gap="xs">
+        <Heading level={1} variant="headingLg">
+          Cluster Vision
+        </Heading>
+        <Text color="muted">
+          Auto-generated infrastructure diagrams from live Kubernetes state
+        </Text>
+        <Text variant="caption" color="muted">
+          Last refresh: {formattedTime}
+        </Text>
+      </Stack>
       <Separator />
-      <div className={styles.grid}>
+      <Grid minColumnWidth="280px" gap="md">
         {cards.map((card) => (
           <Link to={card.to} key={card.id} style={{ textDecoration: "none" }}>
             <Card variant="interactive" header={card.title}>
-              <p className={styles.cardDesc}>{card.description}</p>
+              <Text variant="bodySm" color="muted">
+                {card.description}
+              </Text>
             </Card>
           </Link>
         ))}
-      </div>
-    </div>
+      </Grid>
+    </Stack>
   );
 }

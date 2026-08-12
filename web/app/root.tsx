@@ -7,7 +7,7 @@ import {
   ScrollRestoration,
 } from "react-router";
 
-import { ThemeProvider } from "@duro-app/ui";
+import { Heading, PageShell, Stack, Text, ThemeProvider } from "@duro-app/ui";
 import "@duro-app/ui/reset.css";
 // StyleX-compiled atomic class styles for every @duro-app/ui component.
 // Without this, JSX uses class names like x1ghz6dp/x1717udv with no backing CSS rules.
@@ -67,14 +67,14 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   }
 
   return (
-    <main className="pt-16 p-4 container mx-auto">
-      <h1>{message}</h1>
-      <p>{details}</p>
-      {stack && (
-        <pre className="w-full p-4 overflow-x-auto">
-          <code>{stack}</code>
-        </pre>
-      )}
-    </main>
+    <PageShell maxWidth="md" padding="lg">
+      <main>
+        <Stack gap="md">
+          <Heading level={1}>{message}</Heading>
+          <Text>{details}</Text>
+          {stack && <pre>{stack}</pre>}
+        </Stack>
+      </main>
+    </PageShell>
   );
 }

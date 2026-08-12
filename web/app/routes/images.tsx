@@ -4,8 +4,7 @@ import { fetchDiagram } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
 import { DataTable, ExploitBadge, OutdatedBadge, SecurityBadge } from "../components/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Tooltip } from "@duro-app/ui";
-import tableStyles from "../components/data-table.module.css";
+import { Text, Tooltip } from "@duro-app/ui";
 
 interface ImageRow {
   image: string;
@@ -44,7 +43,9 @@ const columns: ColumnDef<ImageRow, string>[] = [
         return (
           <Tooltip.Root content={tag}>
             <Tooltip.Trigger>
-              <span>{short}</span>
+              {/* caption (12px) matches the size="sm" table cell; Text's
+                  bodyMd default would render this 16px next to 12px siblings. */}
+              <Text variant="caption">{short}</Text>
             </Tooltip.Trigger>
           </Tooltip.Root>
         );
@@ -84,7 +85,11 @@ const columns: ColumnDef<ImageRow, string>[] = [
   },
   { accessorKey: "type", header: "Type" },
   { accessorKey: "registry", header: "Registry" },
-  { accessorKey: "namespaces", header: "Namespaces", meta: { className: tableStyles.wideCell } },
+  {
+    accessorKey: "namespaces",
+    header: "Namespaces",
+    meta: { width: "minmax(200px, 400px)" },
+  },
   { accessorKey: "pods", header: "Pods" },
 ];
 

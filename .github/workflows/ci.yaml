@@ -59,6 +59,9 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Lint
+        run: npm run lint
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -116,7 +119,9 @@ jobs:
 
       - name: Wait for clone to be Ready
         run: |
-          for i in $(seq 1 120); do   # up to ~10m for snapshot + CNPG bootstrap
+          # ~20m budget: covers clone scheduling delays under capacity
+          # pressure (the ~10m budget was flaking whenever a clone queued).
+          for i in $(seq 1 240); do
             phase=$(kubectl -n "$MC_NS" get migrationcheck "$MC_NAME" -o jsonpath='{.status.phase}' 2>/dev/null || true)
             echo "phase=$phase ($i)"
             case "$phase" in
