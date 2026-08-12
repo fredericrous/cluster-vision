@@ -33,7 +33,8 @@ function ExpiryBadge({ days, level }: { days: number; level: string }) {
     return <Badge variant="error" size="sm">{days}d</Badge>;
   if (level === "warning")
     return <Badge variant="warning" size="sm">{days}d</Badge>;
-  return <Text>{days}d</Text>;
+  // caption (12px) matches the size="sm" table cell these render in.
+  return <Text variant="caption">{days}d</Text>;
 }
 
 const columns: ColumnDef<CertificateRow, string>[] = [

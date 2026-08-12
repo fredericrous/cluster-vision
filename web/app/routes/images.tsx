@@ -43,7 +43,9 @@ const columns: ColumnDef<ImageRow, string>[] = [
         return (
           <Tooltip.Root content={tag}>
             <Tooltip.Trigger>
-              <Text>{short}</Text>
+              {/* caption (12px) matches the size="sm" table cell; Text's
+                  bodyMd default would render this 16px next to 12px siblings. */}
+              <Text variant="caption">{short}</Text>
             </Tooltip.Trigger>
           </Tooltip.Root>
         );

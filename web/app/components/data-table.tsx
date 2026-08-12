@@ -124,13 +124,29 @@ export function DataTable<T>({
                   typeof header.column.columnDef.header === "string"
                     ? header.column.columnDef.header
                     : header.id;
+                // Derive the direction from the `sorting` state rather than
+                // only from header.column.getIsSorted(). TanStack returns the
+                // same getHeaderGroups() array across sort changes, so without
+                // a read of `sorting` here the React Compiler memoizes this
+                // whole header row and the sort indicator stays frozen at "⇅"
+                // even though the rows below it reorder.
+                const sorted = sorting.find((s) => s.id === header.column.id);
+                const direction = sorted
+                  ? sorted.desc
+                    ? "descending"
+                    : "ascending"
+                  : "none";
                 return (
                   <Table.HeaderCell
                     key={header.id}
                     label={label}
                     width={header.column.columnDef.meta?.width}
                   >
-                    <SortableHeader column={header.column}>
+                    <SortableHeader
+                      column={header.column}
+                      direction={direction}
+                      label={label}
+                    >
                       {flexRender(
                         header.column.columnDef.header,
                         header.getContext()
@@ -170,20 +186,43 @@ export function DataTable<T>({
 
 /** Column header that toggles sorting. Table.HeaderCell has no onClick, so the
  *  affordance is a link-style Button — which also makes it keyboard-operable,
- *  unlike the click-only <span> this replaced. */
+ *  unlike the click-only <span> this replaced.
+ *
+ *  `direction` is keyed into Table.SortIndicator deliberately: the indicator
+ *  reads column.getIsSorted() internally, so it only shows the right glyph if
+ *  it actually re-renders. Keying on the direction makes that a dependency the
+ *  React Compiler can see, instead of memoizing on the (stable) column object. */
 function SortableHeader<T>({
   column,
+  direction,
+  label,
   children,
 }: {
   column: Column<T, unknown>;
+  direction: "ascending" | "descending" | "none";
+  label: string;
   children: React.ReactNode;
 }) {
   if (!column.getCanSort()) return <>{children}</>;
   return (
-    <Button variant="link" size="small" onClick={() => column.toggleSorting()}>
+    <Button
+      variant="link"
+      size="small"
+      onClick={() => column.toggleSorting()}
+      aria-label={
+        direction === "none"
+          ? `Sort by ${label}`
+          : `${label}, sorted ${direction}. Activate to change sort order`
+      }
+    >
       <Inline gap="xs" align="center">
-        {children}
-        <Table.SortIndicator column={column} />
+        {/* Button variant="link" paints its content accent-blue. Duro styles
+            HeaderCell muted/600 by design, so restore that here — otherwise
+            every column header reads as a blue link. */}
+        <Text variant="caption" color="muted" weight="semibold">
+          {children}
+        </Text>
+        <Table.SortIndicator key={direction} column={column} />
       </Inline>
     </Button>
   );
