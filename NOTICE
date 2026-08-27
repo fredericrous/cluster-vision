@@ -1,0 +1,59 @@
+cluster-vision
+Copyright 2026 Frédéric Rous
+
+================================================================================
+Licensing structure
+================================================================================
+
+This repository is SOURCE-AVAILABLE, not open source. Different parts of it
+carry different licenses:
+
+  /                        Business Source License 1.1 (see LICENSE)
+                           Converts to Apache License 2.0 on the Change Date.
+
+  /mcp                     Apache License 2.0 (see mcp/LICENSE)
+                           The MCP server is integration surface and is
+                           intended to be freely usable and embeddable.
+
+  /chart/cluster-vision    Apache License 2.0 (see chart/cluster-vision/LICENSE)
+                           The Helm chart is deployment surface and is
+                           intended to be freely usable, forkable and
+                           redistributable.
+
+Everything not explicitly covered by a nested LICENSE file is governed by the
+Business Source License 1.1 at the root of this repository.
+
+In plain language (the LICENSE file is what actually governs):
+
+  You MAY          read, audit, fork, modify and self-host the code; run it in
+                   production for personal use, in a registered non-profit, or
+                   in an educational institution; and evaluate it anywhere.
+
+  You NEED a       any other production use -- in particular running it in or
+  license for      for a business -- and offering it to third parties as a
+                   hosted or managed service.
+
+  On 2030-08-28    this version becomes Apache License 2.0, automatically.
+
+Prior to 2026-08-28, this project was distributed under the Apache License 2.0.
+Versions published before that date remain available under Apache 2.0; the
+change applies to subsequent versions. The Licensor holds sole copyright in
+the Licensed Work and has made this change unilaterally.
+
+Change Date convention: the Change Date above applies to the version published
+alongside it. Each subsequent release carries a Change Date four years after
+that release, which is the maximum permitted by the Business Source License.
+
+================================================================================
+Third-party components
+================================================================================
+
+This product includes third-party software. A full inventory of the bundled
+dependencies and their licenses is in THIRD-PARTY-NOTICES.md.
+
+No component of this product is licensed under the GPL, LGPL, AGPL or SSPL.
+
+Components under the Mozilla Public License 2.0 are used unmodified and are
+confined to build-time tooling; MPL-2.0 is file-level copyleft and does not
+extend to the Licensed Work. Where a dependency is offered under a choice of
+licenses, the permissive option is elected.

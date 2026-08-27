@@ -3,3 +3,8 @@ name: cluster-vision
 description: Auto-generated infrastructure diagrams from live Kubernetes state
 version: 0.22.0
 appVersion: 0.22.0
+annotations:
+  # The chart itself is Apache-2.0 (see LICENSE in this directory).
+  # It deploys the cluster-vision application, which is licensed under
+  # the Business Source License 1.1.
+  artifacthub.io/license: Apache-2.0

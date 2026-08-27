@@ -28,6 +28,11 @@ RUN npm run build
 # Stage 3: Final runtime image
 FROM node:24-alpine
 
+LABEL org.opencontainers.image.title="cluster-vision" \
+      org.opencontainers.image.source="https://github.com/fredericrous/cluster-vision" \
+      org.opencontainers.image.licenses="LicenseRef-BUSL-1.1" \
+      org.opencontainers.image.vendor="Frederic Rous"
+
 RUN apk add --no-cache tini
 
 WORKDIR /app
