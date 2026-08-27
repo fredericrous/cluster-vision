@@ -16,8 +16,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Labels & Annotations — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("labels");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("labels", request);
 }
 
 const columns: ColumnDef<LabelRow, string>[] = [

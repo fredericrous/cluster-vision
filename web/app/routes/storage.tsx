@@ -22,8 +22,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Storage — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("storage");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("storage", request);
 }
 
 const columns: ColumnDef<StorageRow, string>[] = [

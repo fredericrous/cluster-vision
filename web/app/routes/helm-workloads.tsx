@@ -18,8 +18,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Helm to Workloads — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("helm-workloads");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("helm-workloads", request);
 }
 
 const columns: ColumnDef<HelmWorkloadRow, string>[] = [

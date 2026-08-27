@@ -7,8 +7,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Topology — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagramsByPrefix("topology");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagramsByPrefix("topology", request);
 }
 
 export default function Topology({ loaderData }: Route.ComponentProps) {

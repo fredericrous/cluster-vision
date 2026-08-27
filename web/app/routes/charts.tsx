@@ -23,8 +23,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Helm Charts — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("charts");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("charts", request);
 }
 
 const columns: ColumnDef<VersionRow, string>[] = [

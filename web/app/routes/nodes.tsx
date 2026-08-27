@@ -36,8 +36,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Cluster Nodes — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("nodes");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("nodes", request);
 }
 
 const columns: ColumnDef<NodeRow, string>[] = [

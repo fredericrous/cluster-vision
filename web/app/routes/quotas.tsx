@@ -17,8 +17,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Resource Quotas — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("quotas");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("quotas", request);
 }
 
 const columns: ColumnDef<QuotaRow, string>[] = [

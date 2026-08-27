@@ -1,8 +1,10 @@
 import type { Route } from "./+types/home";
-import { fetchDiagrams } from "../api.server";
-import { Card, Grid, Heading, Stack, Text } from "@duro-app/ui";
+import { fetchConfig, fetchDiagrams, fetchSnapshots, type Snapshot } from "../api.server";
+import { Badge, Button, Card, Grid, Heading, Inline, Stack, Text } from "@duro-app/ui";
 import { Separator } from "@base-ui/react/separator";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
+import { formatWhen, shortSha } from "../lib/compare";
+import { routeForDiagram } from "../components/compare-bar";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -15,12 +17,76 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export async function loader() {
-  const data = await fetchDiagrams();
+  const [data, config] = await Promise.all([fetchDiagrams(), fetchConfig()]);
+  let recent: Snapshot[] = [];
+  if (config.snapshots) {
+    try {
+      recent = (await fetchSnapshots(10)).filter(
+        (s) => s.summary.previous_id !== null
+      );
+    } catch {
+      recent = [];
+    }
+  }
   return {
     diagramCount: data.diagrams.length,
     diagrams: data.diagrams.map((d) => ({ id: d.id, title: d.title })),
     generatedAt: data.generated_at,
+    snapshotsEnabled: config.snapshots,
+    recent,
   };
+}
+
+/** The home page's answer to "what changed?": one row per snapshot that
+ *  differs from the one before it, deep-linking into compare mode with
+ *  both ends pinned so the link stays stable in a postmortem. */
+function RecentChanges({ recent }: { recent: Snapshot[] }) {
+  const navigate = useNavigate();
+  if (recent.length === 0) {
+    return (
+      <Text variant="caption" color="muted">
+        Change history starts now — this list fills in after the next cluster change.
+      </Text>
+    );
+  }
+  return (
+    <Stack gap="sm">
+      {recent.map((s) => {
+        const total = s.summary.total.added + s.summary.total.removed + s.summary.total.changed;
+        const views = Object.entries(s.summary.diagrams);
+        const first = views[0]?.[0];
+        const to = `${first ? routeForDiagram(first) : "/dependencies"}?before=${s.summary.previous_id}&after=${s.id}`;
+        return (
+          <Card key={s.id} variant="interactive" size="compact" onClick={() => navigate(to)}>
+            <Stack gap="xs">
+              <Inline gap="sm" align="baseline">
+                <Text variant="bodySm" weight="semibold">
+                  {formatWhen(s.taken_at)} · {shortSha(s)}
+                </Text>
+                <Text variant="caption" color="muted">
+                  {total} change{total === 1 ? "" : "s"} across {views.length} view{views.length === 1 ? "" : "s"}
+                </Text>
+                {s.new_revision && <Badge variant="info" size="sm">deploy</Badge>}
+                {s.summary.drift && (
+                  <Badge variant="warning" size="sm">changed with no new commit</Badge>
+                )}
+              </Inline>
+              <Inline gap="xs">
+                {views.slice(0, 6).map(([id, sum]) => (
+                  <Badge key={id} variant="default" size="sm">
+                    {id} {sum.added + sum.removed + sum.changed}
+                  </Badge>
+                ))}
+                {views.length > 6 && (
+                  <Text variant="caption" color="muted">+{views.length - 6} more</Text>
+                )}
+              </Inline>
+            </Stack>
+          </Card>
+        );
+      })}
+    </Stack>
+  );
 }
 
 const cards = [
@@ -147,8 +213,9 @@ const cards = [
 ];
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-  const { generatedAt } = loaderData;
+  const { generatedAt, snapshotsEnabled, recent } = loaderData;
   const formattedTime = new Date(generatedAt).toLocaleString();
+  const navigate = useNavigate();
 
   return (
     <Stack gap="lg">
@@ -163,6 +230,26 @@ export default function Home({ loaderData }: Route.ComponentProps) {
           Last refresh: {formattedTime}
         </Text>
       </Stack>
+      {snapshotsEnabled && (
+        <>
+          <Separator />
+          <Stack gap="sm">
+            <Inline gap="md" align="baseline">
+              <Heading level={2} variant="headingSm">
+                Recent changes
+              </Heading>
+              <Button
+                variant="link"
+                size="small"
+                onClick={() => navigate("/dependencies?before=deploy")}
+              >
+                Since last deploy
+              </Button>
+            </Inline>
+            <RecentChanges recent={recent} />
+          </Stack>
+        </>
+      )}
       <Separator />
       <Grid minColumnWidth="280px" gap="md">
         {cards.map((card) => (

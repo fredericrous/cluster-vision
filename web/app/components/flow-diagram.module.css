@@ -75,3 +75,8 @@
   border-radius: 2px;
 }
 
+
+.legendGlyph {
+  font-weight: 700;
+  font-family: ui-monospace, monospace;
+}

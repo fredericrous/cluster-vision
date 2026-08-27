@@ -18,8 +18,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "RBAC — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("rbac");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("rbac", request);
 }
 
 const columns: ColumnDef<RBACRow, string>[] = [

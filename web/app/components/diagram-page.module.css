@@ -28,3 +28,44 @@
   border-radius: var(--duro-radius-sm);
   position: relative;
 }
+
+/* Compare mode: diagram + the changes panel side by side. The panel is
+   the primary artifact on small screens, so it stacks first there. */
+.compareLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--duro-spacing-md);
+  flex: 1;
+  min-height: 0;
+}
+
+.compareMain {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.compareMain > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.comparePanel {
+  background: var(--duro-color-bg-card);
+  border: 1px solid var(--duro-color-border);
+  border-radius: var(--duro-radius-sm);
+  padding: var(--duro-spacing-md);
+  overflow-y: auto;
+  max-height: calc(100vh - 8rem);
+}
+
+@media (max-width: 900px) {
+  .compareLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .comparePanel {
+    order: -1;
+    max-height: 40vh;
+  }
+}
