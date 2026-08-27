@@ -15,6 +15,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Attestation check
+        id: attest
+        uses: fredericrous/attest@v1
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -27,6 +31,7 @@ jobs:
           only-new-issues: true
 
       - name: Go test
+        if: ${{ !contains(fromJSON(steps.attest.outputs.gates), 'pre-push-go-test') }}
         run: go test ./...
 
       - name: Go build
@@ -44,6 +49,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Attestation check
+        id: attest
+        uses: fredericrous/attest@v1
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -63,6 +72,7 @@ jobs:
         run: npm run lint
 
       - name: Typecheck
+        if: ${{ !contains(fromJSON(steps.attest.outputs.gates), 'pre-push-run-tests-js') }}
         run: npm run typecheck
 
       - name: Build
