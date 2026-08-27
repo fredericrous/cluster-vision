@@ -1,6 +1,7 @@
 {
   "name": "web",
   "private": true,
+  "license": "SEE LICENSE IN ../LICENSE",
   "type": "module",
   "scripts": {
     "build": "react-router build",
