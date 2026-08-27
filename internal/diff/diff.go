@@ -174,16 +174,16 @@ func ObservedHash(diagrams []model.DiagramResult, revs []Revision) []byte {
 	sorted := append([]model.DiagramResult(nil), diagrams...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
 	for _, d := range sorted {
-		fmt.Fprintf(h, "%s\x00%s\x00", d.ID, d.Type)
+		_, _ = fmt.Fprintf(h, "%s\x00%s\x00", d.ID, d.Type)
 		if d.Type == "table" {
 			spec := specFor(d.ID)
 			for _, row := range tableRows(d) {
-				fmt.Fprintf(h, "%s\n", canonicalRow(row, spec.Advisory))
+				_, _ = fmt.Fprintf(h, "%s\n", canonicalRow(row, spec.Advisory))
 			}
 		} else {
-			h.Write([]byte(d.Content))
+			_, _ = h.Write([]byte(d.Content))
 		}
-		h.Write([]byte{0})
+		_, _ = h.Write([]byte{0})
 	}
 
 	rs := append([]Revision(nil), revs...)
@@ -194,7 +194,7 @@ func ObservedHash(diagrams []model.DiagramResult, revs []Revision) []byte {
 		return rs[i].Kustomization < rs[j].Kustomization
 	})
 	for _, r := range rs {
-		fmt.Fprintf(h, "rev\x00%s\x00%s\x00%s\n", r.Cluster, r.Kustomization, r.Revision)
+		_, _ = fmt.Fprintf(h, "rev\x00%s\x00%s\x00%s\n", r.Cluster, r.Kustomization, r.Revision)
 	}
 	return h.Sum(nil)
 }
