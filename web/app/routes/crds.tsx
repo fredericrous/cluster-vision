@@ -17,8 +17,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "CRDs — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("crds");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("crds", request);
 }
 
 const columns: ColumnDef<CRDRow, string>[] = [

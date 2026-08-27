@@ -6,8 +6,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Network — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("network");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("network", request);
 }
 
 export default function Network({ loaderData }: Route.ComponentProps) {

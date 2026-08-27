@@ -20,8 +20,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Workloads — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("workloads");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("workloads", request);
 }
 
 const columns: ColumnDef<WorkloadRow, string>[] = [

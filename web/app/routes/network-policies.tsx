@@ -19,8 +19,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Network Policies — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("network-policies");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("network-policies", request);
 }
 
 const columns: ColumnDef<NetworkPolicyRow, string>[] = [

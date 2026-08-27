@@ -26,8 +26,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Container Images — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("images");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("images", request);
 }
 
 const columns: ColumnDef<ImageRow, string>[] = [

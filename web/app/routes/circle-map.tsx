@@ -9,8 +9,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Circle Map — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("dependencies");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("dependencies", request);
 }
 
 interface FlowNodeRaw {

@@ -22,8 +22,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Namespace Summary — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("namespace-summary");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("namespace-summary", request);
 }
 
 const columns: ColumnDef<NamespaceSummaryRow, string>[] = [

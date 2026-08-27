@@ -22,3 +22,31 @@
 .clusterNAS {
   border-left: 3px solid #14b8a6;
 }
+
+/* Compare mode */
+.diffSame {
+  opacity: 0.45;
+}
+
+.diffAdded {
+  border: 2px solid var(--duro-color-success, #22c55e) !important;
+  background: color-mix(in srgb, var(--duro-color-success, #22c55e) 25%, transparent) !important;
+}
+
+.diffRemoved {
+  border: 2px dotted var(--duro-color-error, #ef4444) !important;
+  background: color-mix(in srgb, var(--duro-color-error, #ef4444) 20%, transparent) !important;
+  opacity: 0.75;
+  text-decoration: line-through;
+}
+
+.diffChanged {
+  border: 2px dashed var(--duro-color-warning, #f59e0b) !important;
+  background: color-mix(in srgb, var(--duro-color-warning, #f59e0b) 25%, transparent) !important;
+}
+
+.glyph {
+  font-weight: 700;
+  margin-right: 6px;
+  font-family: ui-monospace, monospace;
+}

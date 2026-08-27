@@ -6,8 +6,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Dependencies — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("dependencies");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("dependencies", request);
 }
 
 export default function Dependencies({ loaderData }: Route.ComponentProps) {

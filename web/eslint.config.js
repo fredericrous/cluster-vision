@@ -84,6 +84,18 @@ const rawElementExceptions = [
     files: ["app/routes/circle-map.tsx"],
     allow: ["div"],
   },
+  {
+    // Compare-mode layout: diagram + changes panel grid, and the
+    // <aside> landmark for the panel.
+    files: ["app/components/diagram-page.tsx"],
+    allow: ["div", "aside"],
+  },
+  {
+    // External compare links (forge "compare A...B" pages) — Duro has no
+    // anchor component.
+    files: ["app/components/compare-bar.tsx"],
+    allow: ["a"],
+  },
 ];
 
 export default [

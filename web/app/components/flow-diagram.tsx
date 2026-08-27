@@ -12,6 +12,7 @@ import dagre from "@dagrejs/dagre";
 import { SmartStepEdge } from "@jalez/react-flow-smart-edge";
 import { FlowNode, type FlowNodeData } from "./flow-node";
 import { LayerGroup } from "./flow-group";
+import type { Change, DiagramDiff } from "../api.server";
 import styles from "./flow-diagram.module.css";
 
 interface FlowNodeRaw {
@@ -103,9 +104,69 @@ function assignLayerColors(layers: string[]): Record<string, string> {
   return map;
 }
 
+const REMOVED_LAYER = "(removed)";
+
+/** Rebuild removed nodes/edges from the diff so the layout runs on the
+ *  union of both sides and nothing moves between "before" and "after".
+ *  Removed elements only carry their id/label; cluster is recovered from
+ *  the id (`<cluster>/<name>`) and the layer is a placeholder. */
+function withRemoved(
+  rawNodes: FlowNodeRaw[],
+  rawEdges: FlowEdgeRaw[],
+  diff: DiagramDiff | null
+): { nodes: FlowNodeRaw[]; edges: FlowEdgeRaw[]; ops: Map<string, Change> } {
+  const ops = new Map<string, Change>();
+  if (!diff) return { nodes: rawNodes, edges: rawEdges, ops };
+  for (const c of diff.changes) ops.set(c.id, c);
+
+  const nodes = [...rawNodes];
+  const known = new Set(rawNodes.map((n) => n.id));
+  const edges = [...rawEdges];
+  for (const c of diff.changes) {
+    if (c.op !== "removed") continue;
+    if (c.kind === "node" && !known.has(c.id)) {
+      const slash = c.id.indexOf("/");
+      nodes.push({
+        id: c.id,
+        label: c.label || c.id,
+        cluster: slash > 0 ? c.id.slice(0, slash) : "",
+        layer: REMOVED_LAYER,
+      });
+      known.add(c.id);
+    }
+    if (c.kind === "edge") {
+      // "<src>-><dst>" or "xc-cm:<src>-><dst>:<label>"
+      const cross = c.id.startsWith("xc-");
+      let body = cross ? c.id.slice(c.id.indexOf(":") + 1) : c.id;
+      let label: string | undefined;
+      if (cross) {
+        const last = body.lastIndexOf(":");
+        if (last > 0) {
+          label = body.slice(last + 1);
+          body = body.slice(0, last);
+        }
+      }
+      const [source, target] = body.split("->");
+      if (source && target) {
+        edges.push({ id: c.id, source, target, crossCluster: cross, label });
+      }
+    }
+  }
+  return { nodes, edges, ops };
+}
+
+function diffStateOf(id: string, ops: Map<string, Change>, active: boolean): FlowNodeData["diff"] {
+  if (!active) return undefined;
+  const c = ops.get(id);
+  if (!c) return "same";
+  return c.op;
+}
+
 function buildLayout(
   rawNodes: FlowNodeRaw[],
-  rawEdges: FlowEdgeRaw[]
+  rawEdges: FlowEdgeRaw[],
+  ops: Map<string, Change>,
+  compareActive: boolean
 ): { nodes: Node[]; edges: Edge[]; layerColorMap: Record<string, string> } {
   const nodeW = computeNodeWidth(rawNodes.map((n) => n.label));
 
@@ -345,17 +406,28 @@ function buildLayout(
             layer: p.raw.layer,
             layerColor: layerColorMap[p.raw.layer] || LAYER_PALETTE[LAYER_PALETTE.length - 1],
             width: nodeW,
+            diff: diffStateOf(p.raw.id, ops, compareActive),
           } satisfies FlowNodeData,
         });
       }
     }
   }
 
+  const edgeDiffStyle = (id: string): Record<string, unknown> => {
+    if (!compareActive) return {};
+    const c = ops.get(id);
+    if (!c) return { style: { opacity: 0.35 } };
+    if (c.op === "added") return { style: { stroke: "#22c55e", strokeWidth: 2.5 } };
+    if (c.op === "removed") return { style: { stroke: "#ef4444", strokeWidth: 2, strokeDasharray: "2 4" } };
+    return { style: { stroke: "#f59e0b", strokeWidth: 2.5, strokeDasharray: "8 4" } };
+  };
+
   const edges: Edge[] = rawEdges.map((e) => ({
     id: e.id,
     source: e.source,
     target: e.target,
     type: "smartStep",
+    ...edgeDiffStyle(e.id),
     ...(e.label
       ? {
           label: e.label,
@@ -376,11 +448,18 @@ function buildLayout(
   return { nodes: allNodes, edges, layerColorMap };
 }
 
-export function FlowDiagram({ content }: { content: string }) {
+export function FlowDiagram({
+  content,
+  diff = null,
+}: {
+  content: string;
+  diff?: DiagramDiff | null;
+}) {
   const { nodes, edges: baseEdges, layerColorMap } = useMemo(() => {
     const raw: FlowDataRaw = JSON.parse(content);
-    return buildLayout(raw.nodes, raw.edges);
-  }, [content]);
+    const union = withRemoved(raw.nodes, raw.edges, diff);
+    return buildLayout(union.nodes, union.edges, union.ops, diff !== null);
+  }, [content, diff]);
 
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
@@ -438,6 +517,19 @@ export function FlowDiagram({ content }: { content: string }) {
         />
       </ReactFlow>
       <div className={styles.legend}>
+        {diff && (
+          <>
+            <span className={styles.legendItem}>
+              <span className={styles.legendGlyph}>+</span> added
+            </span>
+            <span className={styles.legendItem}>
+              <span className={styles.legendGlyph}>−</span> removed
+            </span>
+            <span className={styles.legendItem}>
+              <span className={styles.legendGlyph}>~</span> changed
+            </span>
+          </>
+        )}
         {Object.entries(layerColorMap).map(([layer, color]) => (
           <span key={layer} className={styles.legendItem}>
             <span

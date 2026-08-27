@@ -31,6 +31,11 @@ type Config struct {
 	DataSources     []model.DataSource
 	RefreshInterval time.Duration
 	RegistryProxy   string // host:port of local OCI proxy (e.g. Zot) for upstream resolution
+	// Snapshot retention (needs DatabaseURL). Every snapshot is kept for
+	// SnapshotFullRetention, one per day up to SnapshotDailyRetention, and
+	// the first snapshot at each revision forever.
+	SnapshotFullRetention  time.Duration
+	SnapshotDailyRetention time.Duration
 	// EAM (all optional)
 	DatabaseURL  string // enables EAM features
 	LiteLLMURL   string // enables AI enrichment
@@ -50,6 +55,7 @@ type Server struct {
 	mu              sync.RWMutex
 	data            []model.DiagramResult
 	lastGen         time.Time
+	lastPartial     bool // last refresh had a failed list call somewhere
 	// EAM (nil when DATABASE_URL not set)
 	db          *store.DB
 	syncer      *discovery.Syncer
@@ -139,6 +145,9 @@ func (s *Server) Start(ctx context.Context) error {
 	// Background refresh
 	go s.refreshLoop(ctx)
 	go s.exploitEnrichmentLoop(ctx)
+	if s.db != nil {
+		go s.snapshotRetentionLoop(ctx)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/diagrams", s.handleDiagrams)
@@ -159,6 +168,11 @@ func (s *Server) Start(ctx context.Context) error {
 		if s.enricher != nil {
 			mux.HandleFunc("POST /api/eam/enrich", s.handleEnrich)
 		}
+		// Cluster snapshots + diffs
+		mux.HandleFunc("GET /api/snapshots", s.handleListSnapshots)
+		mux.HandleFunc("GET /api/snapshots/{id}/diagrams", s.handleSnapshotDiagrams)
+		mux.HandleFunc("GET /api/diff", s.handleDiffAll)
+		mux.HandleFunc("GET /api/diagrams/{id}/diff", s.handleDiffDiagram)
 	}
 
 	addr := fmt.Sprintf(":%d", s.cfg.Port)
@@ -255,18 +269,63 @@ func (s *Server) enrichImageVulns(vulns []model.ImageVuln) {
 	}
 }
 
+// generate renders every diagram from a cluster model. It is the single
+// place that knows the diagram list, so live refreshes, historical views
+// and diffs all draw with the same code — which is what makes a diff mean
+// "the cluster changed" rather than "the generator changed".
+func (s *Server) generate(clusterData *model.ClusterData) []model.DiagramResult {
+	diagrams := diagram.GenerateTopologySections(clusterData)
+	diagrams = append(diagrams,
+		diagram.GenerateDependencies(clusterData),
+		diagram.GenerateNetwork(clusterData),
+	)
+	diagrams = append(diagrams, diagram.GenerateSecurity(clusterData)...)
+	diagrams = append(diagrams, diagram.GenerateImages(clusterData, s.imageChecker))
+	diagrams = append(diagrams, diagram.GenerateVersions(clusterData, s.checker))
+	diagrams = append(diagrams, diagram.GenerateNodes(clusterData, s.nodeChecker, s.securityChecker))
+	diagrams = append(diagrams,
+		diagram.GenerateWorkloads(clusterData),
+		diagram.GenerateStorage(clusterData),
+		diagram.GenerateCRDs(clusterData),
+		diagram.GenerateQuotas(clusterData),
+		diagram.GenerateCertificates(clusterData),
+		diagram.GenerateNetworkPolicies(clusterData),
+		diagram.GenerateConfigs(clusterData),
+		diagram.GenerateHelmWorkloads(clusterData),
+		diagram.GenerateServiceMap(clusterData),
+		diagram.GenerateNamespaceSummary(clusterData),
+		diagram.GenerateRBAC(clusterData),
+		diagram.GenerateLabels(clusterData),
+		diagram.GenerateVelero(clusterData),
+	)
+	return diagrams
+}
+
 func (s *Server) refresh(ctx context.Context) {
 	slog.Info("refreshing cluster data")
 	start := time.Now()
 
 	// All Kubernetes clusters get the same parsing treatment.
 	// The first parser remains the primary cluster for UI semantics.
-	clusterData := s.k8sParsers[0].ParseAll(ctx)
+	// A failed list call anywhere makes the whole refresh "partial": the
+	// diagrams are still served (stale-but-visible beats blank), but the
+	// state must not be persisted as a snapshot or it would record a
+	// mass delete followed by a mass add.
+	partial := false
+	clusterData, err := s.k8sParsers[0].ParseAll(ctx)
+	if err != nil {
+		slog.Warn("partial parse", "error", err)
+		partial = true
+	}
 	clusterData.PrimaryCluster = s.cfg.ClusterName
 
 	// Merge full data from secondary clusters.
 	for _, p := range s.k8sParsers[1:] {
-		secondary := p.ParseAll(ctx)
+		secondary, err := p.ParseAll(ctx)
+		if err != nil {
+			slog.Warn("partial parse", "error", err)
+			partial = true
+		}
 		clusterData.Nodes = append(clusterData.Nodes, secondary.Nodes...)
 		clusterData.Flux = append(clusterData.Flux, secondary.Flux...)
 		clusterData.Gateways = append(clusterData.Gateways, secondary.Gateways...)
@@ -280,6 +339,7 @@ func (s *Server) refresh(ctx context.Context) {
 		clusterData.LoadBalancers = append(clusterData.LoadBalancers, secondary.LoadBalancers...)
 		clusterData.HelmReleases = append(clusterData.HelmReleases, secondary.HelmReleases...)
 		clusterData.HelmRepositories = append(clusterData.HelmRepositories, secondary.HelmRepositories...)
+		clusterData.GitRepositories = append(clusterData.GitRepositories, secondary.GitRepositories...)
 		clusterData.Pods = append(clusterData.Pods, secondary.Pods...)
 		clusterData.Workloads = append(clusterData.Workloads, secondary.Workloads...)
 		clusterData.Storage = append(clusterData.Storage, secondary.Storage...)
@@ -335,38 +395,22 @@ func (s *Server) refresh(ctx context.Context) {
 	// joining ImageVulns × Pods. Reset between refreshes inside the call.
 	cvmetrics.EmitImageVulnMetrics(clusterData.Pods, clusterData.ImageVulns)
 
-	diagrams := diagram.GenerateTopologySections(clusterData)
-	diagrams = append(diagrams,
-		diagram.GenerateDependencies(clusterData),
-		diagram.GenerateNetwork(clusterData),
-	)
-	diagrams = append(diagrams, diagram.GenerateSecurity(clusterData)...)
-	diagrams = append(diagrams, diagram.GenerateImages(clusterData, s.imageChecker))
-	diagrams = append(diagrams, diagram.GenerateVersions(clusterData, s.checker))
-	diagrams = append(diagrams, diagram.GenerateNodes(clusterData, s.nodeChecker, s.securityChecker))
-	diagrams = append(diagrams,
-		diagram.GenerateWorkloads(clusterData),
-		diagram.GenerateStorage(clusterData),
-		diagram.GenerateCRDs(clusterData),
-		diagram.GenerateQuotas(clusterData),
-		diagram.GenerateCertificates(clusterData),
-		diagram.GenerateNetworkPolicies(clusterData),
-		diagram.GenerateConfigs(clusterData),
-		diagram.GenerateHelmWorkloads(clusterData),
-		diagram.GenerateServiceMap(clusterData),
-		diagram.GenerateNamespaceSummary(clusterData),
-		diagram.GenerateRBAC(clusterData),
-		diagram.GenerateLabels(clusterData),
-		diagram.GenerateVelero(clusterData),
-	)
+	diagrams := s.generate(clusterData)
 
 	s.mu.Lock()
 	s.data = diagrams
 	s.lastGen = time.Now()
 	s.clusterData = clusterData
+	s.lastPartial = partial
 	s.mu.Unlock()
 
-	slog.Info("refresh complete", "duration", time.Since(start))
+	slog.Info("refresh complete", "duration", time.Since(start), "partial", partial)
+
+	// Persist a snapshot off the refresh path. Never under s.mu, never
+	// fatal, skipped entirely when the parse was partial.
+	if s.db != nil {
+		go s.captureSnapshot(ctx, clusterData, diagrams, partial)
+	}
 
 	// Run EAM discovery sync asynchronously, then AI enrichment for new apps
 	if s.syncer != nil {
@@ -545,11 +589,13 @@ func (s *Server) handleHealthLive(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	resp := struct {
-		EAM bool `json:"eam"`
-		AI  bool `json:"ai"`
+		EAM       bool `json:"eam"`
+		AI        bool `json:"ai"`
+		Snapshots bool `json:"snapshots"`
 	}{
-		EAM: s.db != nil,
-		AI:  s.cfg.LiteLLMURL != "",
+		EAM:       s.db != nil,
+		AI:        s.cfg.LiteLLMURL != "",
+		Snapshots: s.db != nil,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

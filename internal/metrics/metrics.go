@@ -38,6 +38,28 @@ var (
 		Name: "cluster_vision_enrichment_cve_total",
 		Help: "Number of CVEs currently cached, by source.",
 	}, []string{"source"})
+
+	// SnapshotsTotal counts cluster snapshots persisted (a new observed
+	// state, or a new revision).
+	SnapshotsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "cluster_vision_snapshots_total",
+		Help: "Number of cluster snapshots written.",
+	})
+
+	// SnapshotsSkipped counts refresh ticks that did not produce a
+	// snapshot, by reason: unchanged (same observed hash), partial_parse
+	// (a cluster list failed, data would be incomplete), error (DB write).
+	SnapshotsSkipped = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "cluster_vision_snapshots_skipped_total",
+		Help: "Refresh ticks that did not write a snapshot, by reason.",
+	}, []string{"reason"})
+
+	// SnapshotDrift is 1 when the latest snapshot changed without a new
+	// desired-state revision — something moved outside GitOps.
+	SnapshotDrift = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "cluster_vision_snapshot_drift",
+		Help: "1 if the most recent snapshot changed with no new Flux revision.",
+	})
 )
 
 // EmitImageVulnMetrics emits gauges keyed by (cluster, namespace, image).

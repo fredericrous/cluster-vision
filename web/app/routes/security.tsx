@@ -24,8 +24,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Security — Cluster Vision" }];
 }
 
-export async function loader() {
-  const data = await fetchDiagrams();
+export async function loader({ request }: Route.LoaderArgs) {
+  const data = await fetchDiagrams(request);
   const table = data.diagrams.find((d) => d.id === "security");
   const chart = data.diagrams.find((d) => d.id === "security-chart");
   if (!table) {

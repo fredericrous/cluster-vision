@@ -21,6 +21,7 @@ import {
   Tooltip,
 } from "@duro-app/ui";
 import { Table } from "@duro-app/ui/table";
+import { indexChanges, rowKey, useDiagramDiff } from "../lib/compare";
 
 declare module "@tanstack/react-table" {
   interface ColumnMeta<TData extends unknown, TValue> {
@@ -45,9 +46,47 @@ export function DataTable<T>({
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 
+  // Compare mode: which rows changed, keyed the same way the API keys them.
+  const diff = useDiagramDiff();
+  const [changesOnly, setChangesOnly] = useState(true);
+  const changeByRow = useMemo(() => {
+    const ops = indexChanges(diff);
+    const m = new Map<T, (typeof ops) extends Map<string, infer C> ? C : never>();
+    if (!diff?.key_fields) return m;
+    for (const row of data) {
+      const c = ops.get(rowKey(row as Record<string, unknown>, diff.key_fields));
+      if (c) m.set(row, c);
+    }
+    return m;
+  }, [diff, data]);
+  const removedCount = diff ? diff.changes.filter((c) => c.op === "removed").length : 0;
+
+  const visibleData = useMemo(() => {
+    if (!diff || !changesOnly) return data;
+    return data.filter((row) => changeByRow.has(row));
+  }, [data, diff, changesOnly, changeByRow]);
+
+  const diffColumns = useMemo<ColumnDef<T, string>[]>(() => {
+    if (!diff) return columns;
+    const marker: ColumnDef<T, string> = {
+      id: "__diff",
+      header: "Δ",
+      enableSorting: false,
+      meta: { width: "3rem" },
+      cell: ({ row }) => {
+        const c = changeByRow.get(row.original);
+        if (!c) return <Text variant="caption" color="muted">·</Text>;
+        if (c.op === "added") return <Badge variant="success" size="sm">+</Badge>;
+        if (c.op === "removed") return <Badge variant="error" size="sm">−</Badge>;
+        return <Badge variant="warning" size="sm">~</Badge>;
+      },
+    };
+    return [marker, ...columns];
+  }, [columns, diff, changeByRow]);
+
   const table = useReactTable({
-    data,
-    columns,
+    data: visibleData,
+    columns: diffColumns,
     state: { sorting, columnFilters },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -115,6 +154,25 @@ export function DataTable<T>({
         </Cluster>
       )}
 
+      {diff && (
+        <Cluster gap="ms" align="center">
+          <Button
+            variant="link"
+            size="small"
+            onClick={() => setChangesOnly((v) => !v)}
+            aria-label={changesOnly ? "Show all rows" : "Show changed rows only"}
+          >
+            {changesOnly ? "Show all rows" : "Show changes only"}
+          </Button>
+          <Text variant="caption" color="muted">
+            {changeByRow.size} changed row{changeByRow.size === 1 ? "" : "s"}
+            {removedCount > 0
+              ? ` · ${removedCount} removed (listed in the changes panel)`
+              : ""}
+          </Text>
+        </Cluster>
+      )}
+
       <Table.Root size="sm">
         <Table.Header>
           {table.getHeaderGroups().map((headerGroup) => (
@@ -166,9 +224,19 @@ export function DataTable<T>({
                   cell.column.columnDef.cell,
                   cell.getContext()
                 );
+                // In compare mode a changed cell shows its old value first.
+                const change = changeByRow.get(row.original);
+                const field = change?.fields?.find((f) => f.name === cell.column.id);
                 return (
                   <Table.Cell key={cell.id}>
-                    {cell.column.columnDef.meta?.truncate ? (
+                    {field ? (
+                      <Inline gap="xs" align="baseline">
+                        <Text variant="caption" color="muted">
+                          {field.from || "∅"} →
+                        </Text>
+                        <Text variant="bodySm" color="warning">{content}</Text>
+                      </Inline>
+                    ) : cell.column.columnDef.meta?.truncate ? (
                       <Text truncate>{content}</Text>
                     ) : (
                       content

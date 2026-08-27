@@ -20,8 +20,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Backup Schedules — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("velero");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("velero", request);
 }
 
 const columns: ColumnDef<VeleroRow, string>[] = [

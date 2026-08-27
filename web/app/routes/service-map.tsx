@@ -18,8 +18,8 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: "Service Mapping — Cluster Vision" }];
 }
 
-export async function loader() {
-  return fetchDiagram("service-map");
+export async function loader({ request }: Route.LoaderArgs) {
+  return fetchDiagram("service-map", request);
 }
 
 const columns: ColumnDef<ServiceMapRow, string>[] = [

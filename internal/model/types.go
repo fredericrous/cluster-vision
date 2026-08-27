@@ -16,6 +16,7 @@ type ClusterData struct {
 	LoadBalancers         []LoadBalancerService
 	HelmReleases          []HelmReleaseInfo
 	HelmRepositories      []HelmRepositoryInfo
+	GitRepositories       []GitRepositoryInfo
 	Pods                  []PodImageInfo
 	Workloads             []WorkloadInfo
 	Storage               []StorageInfo
@@ -59,8 +60,8 @@ type ImageVuln struct {
 
 // PodImageInfo represents a container image running in a pod.
 type PodImageInfo struct {
-	Cluster       string // stamped at parse time so the merged slice from
-	                    // multiple parsers stays attributable per cluster
+	Cluster string // stamped at parse time so the merged slice from
+	// multiple parsers stays attributable per cluster
 	Namespace     string
 	PodName       string
 	Container     string
@@ -179,6 +180,23 @@ type FluxKustomization struct {
 	Path      string
 	DependsOn []string
 	Cluster   string
+	// SourceKind/SourceName identify the Flux source (GitRepository,
+	// OCIRepository, Bucket) the kustomization reconciles from.
+	SourceKind string
+	SourceName string
+	// LastAppliedRevision is status.lastAppliedRevision as reported by
+	// Flux, e.g. "main@sha1:abc123…" for git or "latest@sha256:…" for OCI.
+	// It anchors cluster snapshots to the desired-state revision.
+	LastAppliedRevision string
+}
+
+// GitRepositoryInfo represents a Flux GitRepository source. Used to build
+// "compare A...B" links for snapshot diffs.
+type GitRepositoryInfo struct {
+	Name      string
+	Namespace string
+	Cluster   string
+	URL       string
 }
 
 // GatewayInfo represents a Gateway API Gateway resource.

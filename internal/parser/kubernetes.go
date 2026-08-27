@@ -2,15 +2,19 @@ package parser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"github.com/fredericrous/cluster-vision/internal/model"
 
 	"golang.org/x/sync/errgroup"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -25,6 +29,44 @@ type KubernetesParser struct {
 	dynamic     dynamic.Interface
 	clusterName string
 	platform    string // optional: platform name applied to all nodes (e.g. "QNAP")
+
+	// failed counts list calls that failed for a reason other than "the
+	// resource kind does not exist on this cluster" during the current
+	// ParseAll. A non-zero count means the returned ClusterData is partial
+	// and must not be persisted as a snapshot.
+	failed atomic.Int32
+}
+
+// ClusterName returns the display name this parser stamps on resources.
+func (p *KubernetesParser) ClusterName() string { return p.clusterName }
+
+// listFailed records a failed list call. A missing CRD / unknown kind is
+// expected on clusters that don't run that operator and is logged only;
+// anything else (timeout, auth, connection refused) marks the parse
+// partial.
+func (p *KubernetesParser) listFailed(what string, err error) {
+	if isKindMissing(err) {
+		slog.Debug("resource kind not available on cluster", "cluster", p.clusterName, "resource", what, "error", err)
+		return
+	}
+	p.failed.Add(1)
+	slog.Warn("failed to list "+what, "cluster", p.clusterName, "error", err)
+}
+
+func isKindMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	if apierrors.IsNotFound(err) {
+		return true
+	}
+	var noKind *meta.NoKindMatchError
+	if errors.As(err, &noKind) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "the server could not find the requested resource") ||
+		strings.Contains(msg, "no matches for kind")
 }
 
 // NewKubernetesParser creates a parser from a kubeconfig path and cluster name.
@@ -145,8 +187,14 @@ func (p *KubernetesParser) ParseVulnReports(ctx context.Context) []model.ImageVu
 
 // ParseAll queries all supported resources and returns cluster data.
 // All parse methods run concurrently via errgroup for faster collection.
-func (p *KubernetesParser) ParseAll(ctx context.Context) *model.ClusterData {
+//
+// The returned error is non-nil when at least one list call failed for a
+// reason other than a missing CRD; the data is still returned (so the UI
+// keeps working on partial data) but callers must treat it as incomplete —
+// in particular it must not be persisted as a cluster snapshot.
+func (p *KubernetesParser) ParseAll(ctx context.Context) (*model.ClusterData, error) {
 	data := &model.ClusterData{}
+	p.failed.Store(0)
 	g, gctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error { data.Nodes = p.parseNodes(gctx); return nil })
@@ -161,6 +209,7 @@ func (p *KubernetesParser) ParseAll(ctx context.Context) *model.ClusterData {
 	g.Go(func() error { data.LoadBalancers = p.parseLoadBalancers(gctx); return nil })
 	g.Go(func() error { data.HelmReleases = p.parseHelmReleases(gctx); return nil })
 	g.Go(func() error { data.HelmRepositories = p.parseHelmRepositories(gctx); return nil })
+	g.Go(func() error { data.GitRepositories = p.parseGitRepositories(gctx); return nil })
 	g.Go(func() error { data.Pods = p.parsePods(gctx); return nil })
 	g.Go(func() error { data.Workloads = p.parseWorkloads(gctx); return nil })
 	g.Go(func() error { data.Storage = p.parseStorage(gctx); return nil })
@@ -177,13 +226,19 @@ func (p *KubernetesParser) ParseAll(ctx context.Context) *model.ClusterData {
 	if err := g.Wait(); err != nil {
 		slog.Warn("error during parallel parse", "error", err)
 	}
-	return data
+	if n := p.failed.Load(); n > 0 {
+		return data, fmt.Errorf("cluster %s: %d resource list(s) failed; data is partial", p.clusterName, n)
+	}
+	if err := ctx.Err(); err != nil {
+		return data, fmt.Errorf("cluster %s: parse interrupted: %w", p.clusterName, err)
+	}
+	return data, nil
 }
 
 func (p *KubernetesParser) parseNodes(ctx context.Context) []model.NodeInfo {
 	list, err := p.typed.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list nodes", "error", err)
+		p.listFailed("nodes", err)
 		return nil
 	}
 
@@ -237,7 +292,7 @@ func (p *KubernetesParser) parseFluxKustomizations(ctx context.Context) []model.
 
 	list, err := p.dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list flux kustomizations (CRD may not exist)", "error", err)
+		p.listFailed("flux kustomizations", err)
 		return nil
 	}
 
@@ -260,12 +315,44 @@ func (p *KubernetesParser) parseFluxKustomizations(ctx context.Context) []model.
 			}
 		}
 
+		sourceRef, _ := spec["sourceRef"].(map[string]interface{})
+		status, _ := item.Object["status"].(map[string]interface{})
+
 		result = append(result, model.FluxKustomization{
-			Name:      name,
-			Namespace: ns,
-			Path:      path,
-			DependsOn: deps,
+			Name:                name,
+			Namespace:           ns,
+			Path:                path,
+			DependsOn:           deps,
+			Cluster:             p.clusterName,
+			SourceKind:          strVal(sourceRef, "kind"),
+			SourceName:          strVal(sourceRef, "name"),
+			LastAppliedRevision: strVal(status, "lastAppliedRevision"),
+		})
+	}
+	return result
+}
+
+func (p *KubernetesParser) parseGitRepositories(ctx context.Context) []model.GitRepositoryInfo {
+	gvr := schema.GroupVersionResource{
+		Group:    "source.toolkit.fluxcd.io",
+		Version:  "v1",
+		Resource: "gitrepositories",
+	}
+
+	list, err := p.dynamic.Resource(gvr).Namespace("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		p.listFailed("gitrepositories", err)
+		return nil
+	}
+
+	var result []model.GitRepositoryInfo
+	for _, item := range list.Items {
+		spec, _ := item.Object["spec"].(map[string]interface{})
+		result = append(result, model.GitRepositoryInfo{
+			Name:      item.GetName(),
+			Namespace: item.GetNamespace(),
 			Cluster:   p.clusterName,
+			URL:       strVal(spec, "url"),
 		})
 	}
 	return result
@@ -280,7 +367,7 @@ func (p *KubernetesParser) parseGateways(ctx context.Context) []model.GatewayInf
 
 	list, err := p.dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list gateways (CRD may not exist)", "error", err)
+		p.listFailed("gateways", err)
 		return nil
 	}
 
@@ -327,7 +414,7 @@ func (p *KubernetesParser) parseHTTPRoutes(ctx context.Context) []model.HTTPRout
 
 	list, err := p.dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list httproutes (CRD may not exist)", "error", err)
+		p.listFailed("httproutes", err)
 		return nil
 	}
 
@@ -390,7 +477,7 @@ func (p *KubernetesParser) parseHTTPRoutes(ctx context.Context) []model.HTTPRout
 func (p *KubernetesParser) parseNamespaces(ctx context.Context) []model.NamespaceInfo {
 	list, err := p.typed.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list namespaces", "error", err)
+		p.listFailed("namespaces", err)
 		return nil
 	}
 
@@ -514,7 +601,7 @@ func (p *KubernetesParser) parseServiceEntries(ctx context.Context) []model.Serv
 
 	list, err := p.dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Debug("failed to list serviceentries (CRD may not exist)", "error", err)
+		p.listFailed("serviceentries", err)
 		return nil
 	}
 
@@ -561,7 +648,7 @@ func (p *KubernetesParser) parseEastWestGateways(ctx context.Context) []model.Ea
 		LabelSelector: "topology.istio.io/network",
 	})
 	if err != nil {
-		slog.Warn("failed to list east-west gateway services", "error", err)
+		p.listFailed("east-west gateway services", err)
 		return nil
 	}
 
@@ -599,7 +686,7 @@ func (p *KubernetesParser) parseEastWestGateways(ctx context.Context) []model.Ea
 func (p *KubernetesParser) parseLoadBalancers(ctx context.Context) []model.LoadBalancerService {
 	list, err := p.typed.CoreV1().Services("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list services", "error", err)
+		p.listFailed("services", err)
 		return nil
 	}
 
@@ -645,7 +732,7 @@ func (p *KubernetesParser) parseHelmReleases(ctx context.Context) []model.HelmRe
 
 	list, err := p.dynamic.Resource(gvr).Namespace("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list helmreleases (CRD may not exist)", "error", err)
+		p.listFailed("helmreleases", err)
 		return nil
 	}
 
@@ -701,7 +788,7 @@ func (p *KubernetesParser) parseHelmRepositories(ctx context.Context) []model.He
 
 	list, err := p.dynamic.Resource(gvr).Namespace("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list helmrepositories (CRD may not exist)", "error", err)
+		p.listFailed("helmrepositories", err)
 		return nil
 	}
 
@@ -728,7 +815,7 @@ func (p *KubernetesParser) parseHelmRepositories(ctx context.Context) []model.He
 func (p *KubernetesParser) parsePods(ctx context.Context) []model.PodImageInfo {
 	list, err := p.typed.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list pods", "error", err)
+		p.listFailed("pods", err)
 		return nil
 	}
 
@@ -792,7 +879,7 @@ func (p *KubernetesParser) parseWorkloads(ctx context.Context) []model.WorkloadI
 	// Deployments
 	deps, err := p.typed.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list deployments", "error", err)
+		p.listFailed("deployments", err)
 	} else {
 		for _, d := range deps.Items {
 			var images []string
@@ -818,7 +905,7 @@ func (p *KubernetesParser) parseWorkloads(ctx context.Context) []model.WorkloadI
 	// StatefulSets
 	sts, err := p.typed.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list statefulsets", "error", err)
+		p.listFailed("statefulsets", err)
 	} else {
 		for _, s := range sts.Items {
 			var images []string
@@ -844,7 +931,7 @@ func (p *KubernetesParser) parseWorkloads(ctx context.Context) []model.WorkloadI
 	// DaemonSets
 	dss, err := p.typed.AppsV1().DaemonSets("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list daemonsets", "error", err)
+		p.listFailed("daemonsets", err)
 	} else {
 		for _, d := range dss.Items {
 			var images []string
@@ -870,7 +957,7 @@ func (p *KubernetesParser) parseWorkloads(ctx context.Context) []model.WorkloadI
 	// CronJobs
 	cjs, err := p.typed.BatchV1().CronJobs("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list cronjobs", "error", err)
+		p.listFailed("cronjobs", err)
 	} else {
 		for _, c := range cjs.Items {
 			var images []string
@@ -901,7 +988,7 @@ func (p *KubernetesParser) parseStorage(ctx context.Context) []model.StorageInfo
 	// PersistentVolumes
 	pvs, err := p.typed.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list persistentvolumes", "error", err)
+		p.listFailed("persistentvolumes", err)
 	} else {
 		for _, pv := range pvs.Items {
 			var accessModes []string
@@ -933,7 +1020,7 @@ func (p *KubernetesParser) parseStorage(ctx context.Context) []model.StorageInfo
 	// PersistentVolumeClaims
 	pvcs, err := p.typed.CoreV1().PersistentVolumeClaims("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list persistentvolumeclaims", "error", err)
+		p.listFailed("persistentvolumeclaims", err)
 	} else {
 		for _, pvc := range pvcs.Items {
 			var accessModes []string
@@ -967,7 +1054,7 @@ func (p *KubernetesParser) parseStorage(ctx context.Context) []model.StorageInfo
 	// StorageClasses
 	scs, err := p.typed.StorageV1().StorageClasses().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list storageclasses", "error", err)
+		p.listFailed("storageclasses", err)
 	} else {
 		for _, sc := range scs.Items {
 			reclaimPolicy := ""
@@ -995,7 +1082,7 @@ func (p *KubernetesParser) parseCRDs(ctx context.Context) []model.CRDInfo {
 
 	list, err := p.dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list CRDs", "error", err)
+		p.listFailed("CRDs", err)
 		return nil
 	}
 
@@ -1033,7 +1120,7 @@ func (p *KubernetesParser) parseQuotas(ctx context.Context) []model.QuotaInfo {
 	// ResourceQuotas
 	rqs, err := p.typed.CoreV1().ResourceQuotas("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list resourcequotas", "error", err)
+		p.listFailed("resourcequotas", err)
 	} else {
 		for _, rq := range rqs.Items {
 			resources := make(map[string]string)
@@ -1053,7 +1140,7 @@ func (p *KubernetesParser) parseQuotas(ctx context.Context) []model.QuotaInfo {
 	// LimitRanges
 	lrs, err := p.typed.CoreV1().LimitRanges("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list limitranges", "error", err)
+		p.listFailed("limitranges", err)
 	} else {
 		for _, lr := range lrs.Items {
 			resources := make(map[string]string)
@@ -1094,7 +1181,7 @@ func (p *KubernetesParser) parseCertificates(ctx context.Context) []model.Certif
 
 	list, err := p.dynamic.Resource(gvr).Namespace("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Debug("failed to list certificates (cert-manager CRD may not exist)", "error", err)
+		p.listFailed("certificates", err)
 		return nil
 	}
 
@@ -1158,7 +1245,7 @@ func (p *KubernetesParser) parseCertificates(ctx context.Context) []model.Certif
 func (p *KubernetesParser) parseNetworkPolicies(ctx context.Context) []model.NetworkPolicyInfo {
 	list, err := p.typed.NetworkingV1().NetworkPolicies("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list networkpolicies", "error", err)
+		p.listFailed("networkpolicies", err)
 		return nil
 	}
 
@@ -1211,7 +1298,7 @@ func (p *KubernetesParser) parseConfigs(ctx context.Context) []model.ConfigInfo 
 	// ConfigMaps
 	cms, err := p.typed.CoreV1().ConfigMaps("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list configmaps", "error", err)
+		p.listFailed("configmaps", err)
 	} else {
 		for _, cm := range cms.Items {
 			result = append(result, model.ConfigInfo{
@@ -1227,7 +1314,7 @@ func (p *KubernetesParser) parseConfigs(ctx context.Context) []model.ConfigInfo 
 	// Secrets — only metadata, never expose data
 	secrets, err := p.typed.CoreV1().Secrets("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list secrets", "error", err)
+		p.listFailed("secrets", err)
 	} else {
 		for _, s := range secrets.Items {
 			result = append(result, model.ConfigInfo{
@@ -1246,7 +1333,7 @@ func (p *KubernetesParser) parseConfigs(ctx context.Context) []model.ConfigInfo 
 func (p *KubernetesParser) parseServices(ctx context.Context) []model.ServiceInfo {
 	list, err := p.typed.CoreV1().Services("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list services for service map", "error", err)
+		p.listFailed("services for service map", err)
 		return nil
 	}
 
@@ -1277,7 +1364,7 @@ func (p *KubernetesParser) parseRBAC(ctx context.Context) []model.RBACBindingInf
 	// ClusterRoleBindings
 	crbs, err := p.typed.RbacV1().ClusterRoleBindings().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list clusterrolebindings", "error", err)
+		p.listFailed("clusterrolebindings", err)
 	} else {
 		for _, crb := range crbs.Items {
 			for _, subject := range crb.Subjects {
@@ -1296,7 +1383,7 @@ func (p *KubernetesParser) parseRBAC(ctx context.Context) []model.RBACBindingInf
 	// RoleBindings
 	rbs, err := p.typed.RbacV1().RoleBindings("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("failed to list rolebindings", "error", err)
+		p.listFailed("rolebindings", err)
 	} else {
 		for _, rb := range rbs.Items {
 			for _, subject := range rb.Subjects {
@@ -1328,7 +1415,7 @@ func (p *KubernetesParser) parseVeleroSchedules(ctx context.Context) []model.Vel
 
 	list, err := p.dynamic.Resource(gvr).Namespace("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Debug("failed to list velero schedules (CRD may not exist)", "error", err)
+		p.listFailed("velero schedules", err)
 		return nil
 	}
 
@@ -1388,7 +1475,7 @@ func (p *KubernetesParser) parseVulnReports(ctx context.Context) []model.ImageVu
 
 	list, err := p.dynamic.Resource(gvr).Namespace("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Debug("failed to list vulnerabilityreports (trivy-operator CRD may not exist)", "error", err)
+		p.listFailed("vulnerabilityreports", err)
 		return nil
 	}
 
