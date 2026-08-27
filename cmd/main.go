@@ -19,6 +19,8 @@ func main() {
 	flag.IntVar(&cfg.Port, "port", 8080, "HTTP server port")
 	flag.StringVar(&cfg.Kubeconfig, "kubeconfig", "", "path to kubeconfig (empty for in-cluster)")
 	flag.DurationVar(&cfg.RefreshInterval, "refresh", 5*time.Minute, "data refresh interval")
+	flag.DurationVar(&cfg.SnapshotFullRetention, "snapshot-retention-full", 7*24*time.Hour, "keep every cluster snapshot for this long")
+	flag.DurationVar(&cfg.SnapshotDailyRetention, "snapshot-retention-daily", 90*24*time.Hour, "keep one snapshot per day for this long (first snapshot at each revision is kept forever)")
 	flag.Parse()
 
 	// Allow env var overrides

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/fredericrous/cluster-vision/internal/model"
 )
@@ -19,8 +18,10 @@ type CertificateRow struct {
 	NotAfter    string `json:"notAfter"`
 	RenewalTime string `json:"renewalTime"`
 	Ready       string `json:"ready"`
-	ExpiryDays  int    `json:"expiryDays"`  // days until expiry, -1 if unknown
-	ExpiryLevel string `json:"expiryLevel"` // "ok", "warning", "critical"
+	// Days-until-expiry is deliberately NOT computed here: generators must
+	// be free of wall-clock reads so two runs over the same cluster data
+	// produce identical output (snapshots hash and diff that output). The
+	// UI derives it from NotAfter.
 }
 
 // GenerateCertificates produces a table of cert-manager certificates.
@@ -41,19 +42,6 @@ func GenerateCertificates(data *model.ClusterData) model.DiagramResult {
 			ready = "yes"
 		}
 
-		expiryDays := -1
-		expiryLevel := "ok"
-		if c.NotAfter != "" {
-			if t, err := time.Parse(time.RFC3339, c.NotAfter); err == nil {
-				expiryDays = int(time.Until(t).Hours() / 24)
-				if expiryDays < 30 {
-					expiryLevel = "critical"
-				} else if expiryDays < 90 {
-					expiryLevel = "warning"
-				}
-			}
-		}
-
 		issuer := c.IssuerName
 		if c.IssuerKind != "" && c.IssuerKind != "Issuer" {
 			issuer = c.IssuerKind + "/" + c.IssuerName
@@ -68,8 +56,6 @@ func GenerateCertificates(data *model.ClusterData) model.DiagramResult {
 			NotAfter:    c.NotAfter,
 			RenewalTime: c.RenewalTime,
 			Ready:       ready,
-			ExpiryDays:  expiryDays,
-			ExpiryLevel: expiryLevel,
 		})
 	}
 
