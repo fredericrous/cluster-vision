@@ -1,5 +1,5 @@
 import { Outlet, useLocation, useNavigate } from "react-router";
-import { Heading, SideNav, Stack } from "@duro-app/ui";
+import { Heading, SideNav, Stack, Text } from "@duro-app/ui";
 import type { Route } from "./+types/layout";
 import {
   ApiError,
@@ -161,6 +161,22 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
                 </SideNav.Group>
               ))}
             </SideNav.Root>
+          </div>
+          <div className={styles.licence}>
+            <Stack gap="xs">
+              <Text variant="caption" color="muted">
+                Free for personal, non-profit and educational use. Running it in
+                or for a business requires a commercial licence.
+              </Text>
+              <a
+                className={styles.licenceLink}
+                href="mailto:licensing@daddyshome.fr?subject=Cluster%20Vision%20commercial%20licence"
+              >
+                <Text variant="caption" color="accent" weight="medium">
+                  Get a licence
+                </Text>
+              </a>
+            </Stack>
           </div>
         </div>
         <main className={styles.content}>

@@ -55,3 +55,23 @@
     padding: 1rem;
   }
 }
+
+.licence {
+  padding: var(--duro-spacing-md);
+  border-top: 1px solid var(--duro-color-border);
+  flex-shrink: 0;
+}
+
+.licenceLink {
+  text-decoration: none;
+}
+
+.licenceLink:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  .licence {
+    display: none;
+  }
+}
