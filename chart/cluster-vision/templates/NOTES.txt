@@ -1,0 +1,38 @@
+Cluster Vision {{ .Chart.AppVersion }} is installed as {{ include "cluster-vision.fullname" . }}.
+
+Reach the UI with:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "cluster-vision.fullname" . }} 3000:3000
+
+then open http://localhost:3000
+
+  UI  : port 3000
+  API : port 8080
+{{ if not .Values.envFrom }}
+Snapshots and the application landscape are disabled: nothing is set in
+`envFrom`, so no DATABASE_URL reaches the pod. Point `envFrom` at a Secret
+carrying a Postgres DATABASE_URL to enable them.
+{{ end }}
+------------------------------------------------------------------------------
+ LICENSING
+
+ Cluster Vision is source-available under the Business Source License 1.1,
+ not open source.
+
+   Free, including in production:
+     personal use, registered non-profits, educational institutions,
+     and evaluation anywhere.
+
+   Requires a commercial licence:
+     running it in or for a business, and offering it to third parties
+     as a hosted or managed service.
+
+ If this cluster belongs to a business, you need a licence.
+
+   From EUR 2,400 per production cluster per year.
+   Non-production clusters (development, staging, CI) are free.
+
+   Contact: licensing@daddyshome.fr
+
+ This version converts to Apache License 2.0 on 2030-08-28.
+------------------------------------------------------------------------------

@@ -75,6 +75,14 @@ func main() {
 		"eam", cfg.DatabaseURL != "",
 	)
 
+	// Source-available, not open source: whoever is reading these logs is
+	// running it, and is the person who needs to know a licence may be due.
+	slog.Info("cluster-vision is licensed under the Business Source License 1.1",
+		"free_for", "personal, non-profit, educational and evaluation use",
+		"commercial_use", "requires a licence -- from EUR 2400 per production cluster per year",
+		"contact", "licensing@daddyshome.fr",
+	)
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 

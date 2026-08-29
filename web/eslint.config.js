@@ -45,9 +45,11 @@ const rawElementExceptions = [
     allow: ["html", "head", "body", "meta", "main", "pre"],
   },
   {
-    // App chrome: sticky 220px rail with media queries (CSS module).
+    // App chrome: sticky 220px rail with media queries (CSS module), plus the
+    // mailto anchor in the licence footer -- Duro has no anchor component, same
+    // reason compare-bar.tsx is exempted below.
     files: ["app/routes/layout.tsx"],
-    allow: ["div", "main"],
+    allow: ["div", "main", "a"],
   },
   {
     // Sized/surface containers: `height: calc(100vh - 4rem)` flow page and the
