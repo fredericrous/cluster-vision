@@ -37,4 +37,4 @@ Thumbs.db
 npm-debug.log*
 
 # Duro session-hook cache (duro hook install)
-.claude/.duro-session.cache
+.claude/.duro-session.cache*
