@@ -1,0 +1,16 @@
+# Architecture decisions this repository answers from.
+#
+# It keeps no records of its own: every decision below was made in the fleet
+# corpus and is vendored, not restated.
+#
+# NOTE the scope. The Effect-family keys are decided at `effect-stack`, which
+# here means `web/` and nothing else — the Go backend is not in that scope, so
+# asking without one answers `undecided` rather than handing a TypeScript
+# decision to `internal/`.
+#
+# `aval add github:fredericrous/decisions` refreshes the pack; nothing tells
+# this repository when a fleet decision changes, so `aval add --check` asks.
+packs:
+  - .adr/packs/decisions.yaml
+scopes: []
+keys:
