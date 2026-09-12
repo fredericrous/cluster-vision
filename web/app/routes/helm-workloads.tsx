@@ -14,7 +14,7 @@ interface HelmWorkloadRow {
   replicas: string;
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Helm to Workloads — Cluster Vision" }];
 }
 

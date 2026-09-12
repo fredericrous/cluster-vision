@@ -14,7 +14,7 @@ interface ConfigRow {
   referencedBy: string;
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "ConfigMaps & Secrets — Cluster Vision" }];
 }
 

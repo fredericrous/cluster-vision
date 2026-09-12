@@ -34,6 +34,7 @@
     "react-strict-dom": "^0.0.55"
   },
   "devDependencies": {
+    "@duro-app/eslint-config": "^1.1.2",
     "@duro-app/eslint-plugin": "^1.0.0",
     "@react-router/dev": "^7.13.1",
     "@rolldown/plugin-babel": "^0.2.2",

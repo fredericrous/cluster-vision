@@ -24,7 +24,12 @@ import { Table } from "@duro-app/ui/table";
 import { indexChanges, rowKey, useDiagramDiff } from "../lib/compare";
 
 declare module "@tanstack/react-table" {
-  interface ColumnMeta<TData extends unknown, TValue> {
+  // The type parameters are required by declaration merging, not used here:
+  // TypeScript rejects any rename or omission with "All declarations of
+  // 'ColumnMeta' must have identical type parameters" (TS2428), so the
+  // `^_` escape the unused-vars rule offers is not available.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface ColumnMeta<TData, TValue> {
     /** grid-template-columns track for this column, e.g. 'minmax(200px, 400px)'. */
     width?: string;
     /** Clip overflowing cell text to a single line with an ellipsis. */

@@ -14,7 +14,7 @@ interface RBACRow {
   cluster: string;
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "RBAC — Cluster Vision" }];
 }
 

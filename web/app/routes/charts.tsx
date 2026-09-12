@@ -19,7 +19,7 @@ interface VersionRow {
   vulnSummary: string;
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Helm Charts — Cluster Vision" }];
 }
 

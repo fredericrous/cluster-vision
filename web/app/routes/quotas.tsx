@@ -13,7 +13,7 @@ interface QuotaRow {
   resources: string;
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Resource Quotas — Cluster Vision" }];
 }
 

@@ -2,7 +2,7 @@ import type { Route } from "./+types/dependencies";
 import { fetchDiagram } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Dependencies — Cluster Vision" }];
 }
 

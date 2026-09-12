@@ -2,7 +2,7 @@ import type { Route } from "./+types/network";
 import { fetchDiagram } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Network — Cluster Vision" }];
 }
 

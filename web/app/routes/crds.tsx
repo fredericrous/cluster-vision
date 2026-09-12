@@ -13,7 +13,7 @@ interface CRDRow {
   cluster: string;
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "CRDs — Cluster Vision" }];
 }
 

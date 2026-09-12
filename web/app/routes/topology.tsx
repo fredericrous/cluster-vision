@@ -3,7 +3,7 @@ import { fetchDiagramsByPrefix } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
 import { Text } from "@duro-app/ui";
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Topology — Cluster Vision" }];
 }
 

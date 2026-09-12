@@ -1,4 +1,4 @@
-import duro from "@duro-app/eslint-plugin";
+import { base, react, tests } from "@duro-app/eslint-config";
 import tsParser from "@typescript-eslint/parser";
 
 const languageOptions = {
@@ -101,12 +101,23 @@ const rawElementExceptions = [
 ];
 
 export default [
-  { ignores: ["build/**", "node_modules/**", ".react-router/**"] },
   {
-    ...duro.configs.recommended,
-    files: ["app/**/*.{ts,tsx}"],
-    languageOptions,
+    ignores: [
+      "build/**",
+      "node_modules/**",
+      // React Router typegen output: generated, gitignored, not ours to style.
+      ".react-router/**",
+    ],
   },
+  ...base,
+  // The shared duro-stack presets carry the design-system rules AND the parts
+  // that live in no plugin — the import policy behind ADR-0002 and ADR-0006,
+  // and the a11y test selectors. The plugin alone carried only the first.
+  ...react.map((c) => ({ ...c, files: ["app/**/*.{ts,tsx}"], languageOptions })),
+  ...tests,
+  // The documented per-file raw-element exemptions above, applied last so they
+  // win over the preset's blanket rule. Unchanged in substance: this migration
+  // is about which rules run, not about which markup is allowed.
   ...rawElementExceptions.map(({ files, allow }) => ({
     files,
     languageOptions,

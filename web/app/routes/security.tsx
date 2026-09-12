@@ -20,7 +20,7 @@ interface SecurityRow {
   podSecurity: string;
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Security — Cluster Vision" }];
 }
 

@@ -5,7 +5,7 @@ import { pack, hierarchy } from "d3-hierarchy";
 import { Cluster, Heading, Inline, Stack, Text } from "@duro-app/ui";
 import styles from "./circle-map.module.css";
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Circle Map — Cluster Vision" }];
 }
 

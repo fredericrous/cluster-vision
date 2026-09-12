@@ -28,7 +28,7 @@ function expiry(notAfter: string): { days: number; level: string } {
   return { days, level };
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Certificates — Cluster Vision" }];
 }
 

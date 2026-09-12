@@ -12,7 +12,7 @@ interface LabelRow {
   resourceKinds: string;
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Labels & Annotations — Cluster Vision" }];
 }
 
