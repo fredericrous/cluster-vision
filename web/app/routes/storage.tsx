@@ -18,7 +18,7 @@ interface StorageRow {
   boundTo: string;
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Storage — Cluster Vision" }];
 }
 

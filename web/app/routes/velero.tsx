@@ -16,7 +16,7 @@ interface VeleroRow {
   phase: string;
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Backup Schedules — Cluster Vision" }];
 }
 

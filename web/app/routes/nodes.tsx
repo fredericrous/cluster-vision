@@ -32,7 +32,7 @@ interface NodeRow {
   vulnSummary: string;
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Cluster Nodes — Cluster Vision" }];
 }
 

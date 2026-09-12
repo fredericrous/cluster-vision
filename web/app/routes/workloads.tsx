@@ -16,7 +16,7 @@ interface WorkloadRow {
   age: string;
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Workloads — Cluster Vision" }];
 }
 

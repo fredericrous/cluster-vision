@@ -6,7 +6,7 @@ import { Link, useNavigate } from "react-router";
 import { formatWhen, shortSha } from "../lib/compare";
 import { routeForDiagram } from "../components/compare-bar";
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [
     { title: "Cluster Vision" },
     {

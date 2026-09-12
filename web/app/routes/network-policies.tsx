@@ -15,7 +15,7 @@ interface NetworkPolicyRow {
   egressSummary: string;
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Network Policies — Cluster Vision" }];
 }
 

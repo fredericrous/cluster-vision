@@ -18,7 +18,7 @@ interface NamespaceSummaryRow {
   helmReleases: number;
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Namespace Summary — Cluster Vision" }];
 }
 

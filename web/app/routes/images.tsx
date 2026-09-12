@@ -22,7 +22,7 @@ interface ImageRow {
   kevCVEs: string;          // comma-separated KEV-listed CVE IDs
 }
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_: Route.MetaArgs) {
   return [{ title: "Container Images — Cluster Vision" }];
 }
 
