@@ -138,6 +138,10 @@ func (s *Server) Start(ctx context.Context) error {
 	if err := s.exploit.LoadFromDB(ctx); err != nil {
 		slog.Warn("exploit enrichment LoadFromDB failed — first refresh will run with empty cache", "error", err)
 	}
+	// Publish what the warmed cache knows straight away. The staleness
+	// alert reads these gauges, and leaving them at zero until the first
+	// fetch completes would fire it on every restart.
+	s.publishEnrichmentMetrics()
 
 	// Initial generation
 	s.refresh(ctx)
@@ -154,6 +158,11 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/health/live", s.handleHealthLive)
 	mux.HandleFunc("GET /api/config", s.handleConfig)
+	// Per-CVE KEV/EPSS intel. Registered unconditionally, unlike the EAM
+	// routes below: it is served from the in-memory cache, and a caller
+	// that gates a deployment on it must not get a 404 just because
+	// Postgres is unreachable.
+	mux.HandleFunc("POST /api/cve/enrichment", handleCVEEnrichment(s.exploit))
 	// Prometheus scrape endpoint — no auth (cluster-internal only via the
 	// new `api` Service port; not on the public Gateway).
 	mux.Handle("GET /metrics", promhttp.Handler())
@@ -207,39 +216,62 @@ func (s *Server) refreshLoop(ctx context.Context) {
 	}
 }
 
-// exploitEnrichmentLoop refreshes the KEV/EPSS cache once a day. Runs
-// once at startup (kicked off here, not in Start, to keep boot fast),
-// then every 24 hours. Failures are logged; the previous cache stays
-// in memory until the next attempt succeeds.
-func (s *Server) exploitEnrichmentLoop(ctx context.Context) {
-	const interval = 24 * time.Hour
+// publishEnrichmentMetrics mirrors the enricher's current state onto the
+// gauges. Called after the DB warm-up as well as after every successful
+// refresh, so the gauges describe the cache being served rather than only
+// the fetches this process happened to perform.
+func (s *Server) publishEnrichmentMetrics() {
+	kevN, epssN := s.exploit.CacheSize()
+	// A zero time.Time is a large negative Unix value; report 0 instead,
+	// which reads as "never fetched" to the staleness alert.
+	var last float64
+	if t := s.exploit.LastFetch(); !t.IsZero() {
+		last = float64(t.Unix())
+	}
+	cvmetrics.EnrichmentLastFetch.Set(last)
+	cvmetrics.EnrichmentCVETotal.WithLabelValues("kev").Set(float64(kevN))
+	cvmetrics.EnrichmentCVETotal.WithLabelValues("epss").Set(float64(epssN))
+}
 
-	doRefresh := func() {
+// exploitEnrichmentLoop refreshes the KEV/EPSS cache once a day. The first
+// fetch is skipped when the DB-warmed cache is already younger than the
+// interval — the feeds are ~5MB and a restart is not a reason to
+// re-download them. A failed refresh is retried in an hour rather than a
+// day: the data behind it gates deployments.
+func (s *Server) exploitEnrichmentLoop(ctx context.Context) {
+	const (
+		interval = 24 * time.Hour
+		retry    = time.Hour
+	)
+
+	doRefresh := func() bool {
 		fctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
 		if err := s.exploit.Refresh(fctx); err != nil {
-			slog.Warn("exploit enrichment refresh failed", "error", err)
-			return
+			slog.Warn("exploit enrichment refresh failed — retrying", "error", err, "retry_in", retry)
+			return false
 		}
-		kevN, epssN := s.exploit.CacheSize()
-		cvmetrics.EnrichmentLastFetch.Set(float64(s.exploit.LastFetch().Unix()))
-		cvmetrics.EnrichmentCVETotal.WithLabelValues("kev").Set(float64(kevN))
-		cvmetrics.EnrichmentCVETotal.WithLabelValues("epss").Set(float64(epssN))
+		s.publishEnrichmentMetrics()
+		return true
 	}
 
-	// First fetch — but only if the cache is empty or older than a day.
+	// Fire immediately only if the cache is empty or older than a day.
+	next := interval
 	if last := s.exploit.LastFetch(); last.IsZero() || time.Since(last) > interval {
-		go doRefresh()
+		next = 0
 	}
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	timer := time.NewTimer(next)
+	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			doRefresh()
+		case <-timer.C:
+			d := interval
+			if !doRefresh() {
+				d = retry
+			}
+			timer.Reset(d)
 		}
 	}
 }
