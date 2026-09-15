@@ -68,6 +68,22 @@ func (db *DB) UpsertCVEEnrichmentBatch(ctx context.Context, rows []CVEEnrichment
 	return nil
 }
 
+// MaxCVEEnrichmentFetchedAt returns the most recent fetched_at in
+// cve_enrichment, or the zero time when the table is empty. It is what
+// lets a restarted process know how old its warmed cache is without
+// re-downloading the feeds.
+func (db *DB) MaxCVEEnrichmentFetchedAt(ctx context.Context) (time.Time, error) {
+	// MAX() over an empty table is SQL NULL, hence the pointer scan.
+	var t *time.Time
+	if err := db.Pool.QueryRow(ctx, `SELECT MAX(fetched_at) FROM cve_enrichment`).Scan(&t); err != nil {
+		return time.Time{}, fmt.Errorf("max cve_enrichment.fetched_at: %w", err)
+	}
+	if t == nil {
+		return time.Time{}, nil
+	}
+	return *t, nil
+}
+
 // LoadAllCVEEnrichment returns the entire cve_enrichment table — called
 // once at startup so the in-memory cache can answer Lookup() before the
 // first refresh completes.
