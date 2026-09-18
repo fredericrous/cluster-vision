@@ -367,6 +367,54 @@ export function ExploitBadge({ risk, summary }: { risk: string; summary: string 
   return <>—</>;
 }
 
+// PinBadge summarises how a workload pulls its image. Pinned = the
+// reference carries @sha256 (exact bytes); "tag moved" = pinned, but the
+// registry now serves another digest for that tag (upstream re-tag, pin is
+// stale); unpinned = pull-by-tag, whatever the tag points at next time.
+export function PinBadge({
+  pinned,
+  tagMoved,
+  digest,
+  registryDigest,
+}: {
+  pinned: boolean;
+  tagMoved: boolean;
+  digest: string;
+  registryDigest: string;
+}) {
+  const short = (d: string) => d.replace(/^sha256:/, "").slice(0, 12);
+  if (!pinned) {
+    const tip = registryDigest
+      ? `Pull-by-tag. Registry currently serves ${short(registryDigest)}…`
+      : "Pull-by-tag: no digest pinned.";
+    return (
+      <Tooltip.Root content={tip}>
+        <Tooltip.Trigger>
+          <Badge variant="warning" size="sm">unpinned</Badge>
+        </Tooltip.Trigger>
+      </Tooltip.Root>
+    );
+  }
+  if (tagMoved) {
+    return (
+      <Tooltip.Root
+        content={`Pinned ${short(digest)}…, registry now serves ${short(registryDigest)}… for this tag.`}
+      >
+        <Tooltip.Trigger>
+          <Badge variant="error" size="sm">tag moved</Badge>
+        </Tooltip.Trigger>
+      </Tooltip.Root>
+    );
+  }
+  return (
+    <Tooltip.Root content={digest}>
+      <Tooltip.Trigger>
+        <Badge variant="success" size="sm">pinned</Badge>
+      </Tooltip.Trigger>
+    </Tooltip.Root>
+  );
+}
+
 export function OutdatedBadge({
   value,
   outdated,

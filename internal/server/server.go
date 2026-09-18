@@ -475,6 +475,8 @@ func (s *Server) refresh(ctx context.Context) {
 	// Check latest image tags asynchronously
 	go func() {
 		s.imageChecker.Check(clusterData.Pods)
+		// Pin findings need the registry digests the check just refreshed.
+		cvmetrics.EmitImagePinMetrics(clusterData.Pods, s.imageChecker.GetDigest)
 
 		imagesResult := diagram.GenerateImages(clusterData, s.imageChecker)
 		s.mu.Lock()

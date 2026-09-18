@@ -21,6 +21,7 @@ import (
 type ImageChecker struct {
 	mu        sync.RWMutex
 	latest    map[string]string // "image|tag" → latest tag
+	digests   map[string]string // "image|tag" → what the registry serves for the tag NOW ("sha256:…"), "" if unknown
 	lastCheck time.Time
 	checking  atomic.Bool
 	client    *http.Client
@@ -30,7 +31,8 @@ type ImageChecker struct {
 // NewImageChecker creates a new ImageChecker.
 func NewImageChecker() *ImageChecker {
 	return &ImageChecker{
-		latest: make(map[string]string),
+		latest:  make(map[string]string),
+		digests: make(map[string]string),
 		client: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -146,17 +148,37 @@ func (ic *ImageChecker) Check(pods []model.PodImageInfo) {
 			continue
 		}
 
-		// For each deployed tag, find the highest matching tag with the same variant.
+		// For each deployed tag, find the highest matching tag with the same
+		// variant, and what the registry serves for the deployed tag RIGHT NOW.
+		// The latter feeds the pin findings (unpinned / tag moved / drifted):
+		// a manifest pinned to digest X while the registry now serves Y for
+		// the same tag is an upstream re-tag the cluster has not seen; an
+		// unpinned pod running Y' while the registry serves Y is a mutable
+		// tag that moved underneath the running workload.
 		results := make(map[string]string)
+		digests := make(map[string]string)
 		for tag := range ri.tags {
-			latest := highestMatchingTag(tag, allTags)
-			results[tag] = latest
+			if tag == "" {
+				// Bare-digest reference: no tag to compare against.
+				results[tag] = "-"
+				continue
+			}
+			results[tag] = highestMatchingTag(tag, allTags)
+			d, derr := ic.headDigest(ri.registry, ri.path, tag)
+			if derr != nil {
+				slog.Debug("image check: digest lookup failed", "image", image, "tag", tag, "error", derr)
+				continue
+			}
+			digests[tag] = d
 		}
 
 		// Write results incrementally so partial data is visible.
 		ic.mu.Lock()
 		for tag, latest := range results {
 			ic.latest[image+"|"+tag] = latest
+		}
+		for tag, d := range digests {
+			ic.digests[image+"|"+tag] = d
 		}
 		ic.mu.Unlock()
 
@@ -179,6 +201,105 @@ func (ic *ImageChecker) setResults(image string, tags map[string]bool, value str
 		ic.latest[image+"|"+tag] = value
 	}
 	ic.mu.Unlock()
+}
+
+// GetDigest returns what the registry served for image:tag at the last
+// check ("sha256:…"), and false when it is unknown (never checked, registry
+// skipped or the manifest request failed).
+func (ic *ImageChecker) GetDigest(image, tag string) (string, bool) {
+	ic.mu.RLock()
+	defer ic.mu.RUnlock()
+	d, ok := ic.digests[image+"|"+tag]
+	return d, ok && d != ""
+}
+
+// headDigest resolves what the registry serves for image:tag with the
+// multi-arch-capable Accept set — the image INDEX for a multi-arch publish,
+// the single manifest otherwise. That is exactly what containerd (and a
+// pull-through mirror with preserveDigest) resolves the tag to, so it is
+// the value a `tag@digest` pin in the manifests must equal.
+func (ic *ImageChecker) headDigest(registry, imagePath, tag string) (string, error) {
+	host := registry
+	if host == "docker.io" {
+		host = "registry-1.docker.io"
+	}
+	reqURL := fmt.Sprintf("https://%s/v2/%s/manifests/%s", host, imagePath, tag)
+	resp, err := ic.doWithAuth(http.MethodHead, reqURL, host, manifestAccept)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("registry returned %d", resp.StatusCode)
+	}
+	d := strings.TrimSpace(resp.Header.Get("Docker-Content-Digest"))
+	if !strings.HasPrefix(d, "sha256:") || len(d) != len("sha256:")+64 {
+		return "", fmt.Errorf("no usable Docker-Content-Digest header (%q)", d)
+	}
+	return d, nil
+}
+
+// manifestAccept lists every manifest media type in preference order so the
+// registry answers with the index for multi-arch images.
+const manifestAccept = "application/vnd.oci.image.index.v1+json, " +
+	"application/vnd.docker.distribution.manifest.list.v2+json, " +
+	"application/vnd.oci.image.manifest.v1+json, " +
+	"application/vnd.docker.distribution.manifest.v2+json"
+
+// doWithAuth issues one request, handling the 401 Bearer challenge the same
+// way fetchWithAuth does but for an arbitrary method — a HEAD carries no body
+// worth reading, only headers. The caller owns resp.Body.
+func (ic *ImageChecker) doWithAuth(method, reqURL, registryHost, accept string) (*http.Response, error) {
+	build := func(u, token string) (*http.Request, error) {
+		req, err := http.NewRequest(method, u, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", accept)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		return req, nil
+	}
+	req, err := build(reqURL, "")
+	if err != nil {
+		return nil, err
+	}
+	resp, err := ic.client.Do(req)
+	if err != nil {
+		if !strings.Contains(registryHost, ":") {
+			return nil, fmt.Errorf("%s %s: %w", method, reqURL, err)
+		}
+		// HTTPS failed — try HTTP for registries with a port (likely internal).
+		req, err = build(strings.Replace(reqURL, "https://", "http://", 1), "")
+		if err != nil {
+			return nil, err
+		}
+		if resp, err = ic.insecure.Do(req); err != nil {
+			return nil, fmt.Errorf("%s %s: %w", method, reqURL, err)
+		}
+	}
+	if resp.StatusCode != http.StatusUnauthorized {
+		return resp, nil
+	}
+	challenge := resp.Header.Get("Www-Authenticate")
+	_ = resp.Body.Close()
+	if challenge == "" {
+		return nil, fmt.Errorf("401 with no WWW-Authenticate header")
+	}
+	token, err := ic.getToken(challenge)
+	if err != nil {
+		return nil, fmt.Errorf("getting auth token: %w", err)
+	}
+	req, err = build(reqURL, token)
+	if err != nil {
+		return nil, err
+	}
+	resp, err = ic.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("authenticated request: %w", err)
+	}
+	return resp, nil
 }
 
 // GetLatest returns the cached latest tag for a given image+tag combination.
@@ -365,36 +486,11 @@ func (ic *ImageChecker) getToken(challenge string) (string, error) {
 	return tokenResp.AccessToken, nil
 }
 
-// parseImageRef splits a container image reference into registry, repo, and tag.
-// Duplicated from diagram package to avoid circular imports.
+// parseImageRef splits a container image reference into registry, repo, and
+// tag. A digest-pinned reference (`repo:tag@sha256:…`) yields its TAG —
+// that is what the registry's tag list is compared against; the digest is
+// returned separately by model.SplitImageRef. A bare digest yields "".
 func parseImageRef(ref string) (registry, repo, tag string) {
-	if idx := strings.Index(ref, "@"); idx != -1 {
-		tag = ref[idx+1:]
-		ref = ref[:idx]
-	}
-
-	if tag == "" {
-		if idx := strings.LastIndex(ref, ":"); idx != -1 {
-			slashIdx := strings.LastIndex(ref, "/")
-			if idx > slashIdx {
-				tag = ref[idx+1:]
-				ref = ref[:idx]
-			}
-		}
-		if tag == "" {
-			tag = "latest"
-		}
-	}
-
-	parts := strings.SplitN(ref, "/", 2)
-	if len(parts) == 1 {
-		return "docker.io", "library/" + parts[0], tag
-	}
-
-	first := parts[0]
-	if strings.Contains(first, ".") || strings.Contains(first, ":") || first == "localhost" {
-		return first, parts[1], tag
-	}
-
-	return "docker.io", ref, tag
+	registry, repo, tag, _ = model.SplitImageRef(ref)
+	return registry, repo, tag
 }
