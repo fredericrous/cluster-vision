@@ -25,6 +25,35 @@ var (
 		Help: "Highest FIRST EPSS score across CVEs in the image (0..1).",
 	}, []string{"cluster", "namespace", "image"})
 
+	// Image pin findings, per (cluster, namespace, image) like the vuln
+	// gauges so the same alert → playbook plumbing applies. Consumed by the
+	// ImageUnpinned / ImageTagMoved / ImageTagDrifted rules and, through
+	// them, sre-agent's image_digest_pin playbook. Reset between refreshes.
+	//
+	// ImageUnpinned: the pod spec pulls by tag only (no @sha256). Whatever
+	// the tag points at tomorrow is what the next pull gets.
+	ImageUnpinned = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "cluster_vision_image_unpinned",
+		Help: "1 when the workload's image reference carries no @sha256 digest (pull-by-tag).",
+	}, []string{"cluster", "namespace", "image"})
+
+	// ImageTagMoved: the reference IS pinned, but the registry now serves a
+	// different digest for that tag — upstream re-tagged. The cluster still
+	// runs the pinned bytes; the pin is stale, not wrong.
+	ImageTagMoved = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "cluster_vision_image_tag_moved",
+		Help: "1 when a digest-pinned tag now resolves to a different digest upstream.",
+	}, []string{"cluster", "namespace", "image", "pinned_digest", "registry_digest"})
+
+	// ImageTagDrifted: unpinned, and the RUNNING digest (kubelet imageID) is
+	// not what the registry serves for the tag — a mutable tag moved under
+	// a running workload; the next pod restart pulls different bytes than
+	// its siblings. The strongest argument for pinning, measured.
+	ImageTagDrifted = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "cluster_vision_image_tag_drifted",
+		Help: "1 when an unpinned tag's running digest differs from what the registry serves now.",
+	}, []string{"cluster", "namespace", "image", "running_digest", "registry_digest"})
+
 	// EnrichmentLastFetch: unix timestamp of the most recent successful
 	// KEV/EPSS feed fetch — drives the staleness alert.
 	EnrichmentLastFetch = promauto.NewGauge(prometheus.GaugeOpts{
@@ -97,5 +126,51 @@ func EmitImageVulnMetrics(pods []model.PodImageInfo, vulns []model.ImageVuln) {
 		seen[t] = struct{}{}
 		ImageKEVCount.WithLabelValues(p.Cluster, p.Namespace, p.Image).Set(float64(v.KEVCount))
 		ImageMaxEPSS.WithLabelValues(p.Cluster, p.Namespace, p.Image).Set(v.MaxEPSS)
+	}
+}
+
+// DigestLookup answers "what does the registry serve for image:tag right
+// now" — ImageChecker.GetDigest in production. ok=false means unknown.
+type DigestLookup func(image, tag string) (digest string, ok bool)
+
+// EmitImagePinMetrics emits the pin findings for every running image.
+// `image` is the pod spec reference as written (with its @sha256 when
+// pinned), so an alert's label is what the GitOps manifest contains — the
+// binding sre-agent's playbook hands to patch-agent. Reset between
+// refreshes so a pinned/repinned image drops off the gauges.
+func EmitImagePinMetrics(pods []model.PodImageInfo, lookup DigestLookup) {
+	ImageUnpinned.Reset()
+	ImageTagMoved.Reset()
+	ImageTagDrifted.Reset()
+
+	type triple struct{ cluster, namespace, image string }
+	seen := make(map[triple]struct{})
+	for _, p := range pods {
+		t := triple{cluster: p.Cluster, namespace: p.Namespace, image: p.Image}
+		if _, dup := seen[t]; dup {
+			continue
+		}
+		seen[t] = struct{}{}
+
+		registry, repo, tag, pinned := model.SplitImageRef(p.Image)
+		if tag == "" {
+			// Bare digest: pinned, and no tag for the registry to move.
+			continue
+		}
+		var upstream string
+		if lookup != nil {
+			upstream, _ = lookup(registry+"/"+repo, tag)
+		}
+		if pinned == "" {
+			ImageUnpinned.WithLabelValues(p.Cluster, p.Namespace, p.Image).Set(1)
+			running := model.DigestOf(p.ImageID)
+			if upstream != "" && running != "" && running != upstream {
+				ImageTagDrifted.WithLabelValues(p.Cluster, p.Namespace, p.Image, running, upstream).Set(1)
+			}
+			continue
+		}
+		if upstream != "" && upstream != pinned {
+			ImageTagMoved.WithLabelValues(p.Cluster, p.Namespace, p.Image, pinned, upstream).Set(1)
+		}
 	}
 }

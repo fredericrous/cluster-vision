@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { Route } from "./+types/images";
 import { fetchDiagram } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
-import { DataTable, ExploitBadge, OutdatedBadge, SecurityBadge } from "../components/data-table";
+import { DataTable, ExploitBadge, OutdatedBadge, PinBadge, SecurityBadge } from "../components/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Text, Tooltip } from "@duro-app/ui";
 
@@ -20,6 +20,10 @@ interface ImageRow {
   exploitRisk: string;     // "kev" | "high-epss" | "low-epss" | "none" | ""
   exploitSummary: string;
   kevCVEs: string;          // comma-separated KEV-listed CVE IDs
+  pinned: boolean;          // reference carries @sha256
+  digest: string;           // pinned digest, "" when pull-by-tag
+  registryDigest: string;   // what the registry serves for the tag now, "" if unknown
+  tagMoved: boolean;        // pinned, but the registry serves another digest for the tag
 }
 
 export function meta(_: Route.MetaArgs) {
@@ -60,6 +64,18 @@ const columns: ColumnDef<ImageRow, string>[] = [
       <OutdatedBadge
         value={row.original.latest}
         outdated={row.original.outdated}
+      />
+    ),
+  },
+  {
+    accessorKey: "pinned",
+    header: "Pin",
+    cell: ({ row }) => (
+      <PinBadge
+        pinned={row.original.pinned}
+        tagMoved={row.original.tagMoved}
+        digest={row.original.digest}
+        registryDigest={row.original.registryDigest}
       />
     ),
   },

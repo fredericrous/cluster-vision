@@ -11,27 +11,35 @@ import (
 
 // ImageRow represents a single row in the container images table.
 type ImageRow struct {
-	Image      string `json:"image"`      // registry/repo (without tag)
-	Tag        string `json:"tag"`        // tag or digest
-	Type       string `json:"type"`       // "app" | "init"
-	Namespaces string `json:"namespaces"` // comma-separated unique namespaces
-	Pods       int    `json:"pods"`       // count of pods using this image:tag
-	Registry   string `json:"registry"`   // extracted registry hostname
-	Latest       string `json:"latest"`        // latest tag with same variant pattern
-	Outdated     bool   `json:"outdated"`      // true if latest != current tag
-	SecurityRisk string `json:"securityRisk"`  // "critical" | "warning" | "none" | ""
-	VulnSummary  string `json:"vulnSummary"`   // human-readable tooltip
+	Image        string `json:"image"`        // registry/repo (without tag)
+	Tag          string `json:"tag"`          // tag or digest
+	Type         string `json:"type"`         // "app" | "init"
+	Namespaces   string `json:"namespaces"`   // comma-separated unique namespaces
+	Pods         int    `json:"pods"`         // count of pods using this image:tag
+	Registry     string `json:"registry"`     // extracted registry hostname
+	Latest       string `json:"latest"`       // latest tag with same variant pattern
+	Outdated     bool   `json:"outdated"`     // true if latest != current tag
+	SecurityRisk string `json:"securityRisk"` // "critical" | "warning" | "none" | ""
+	VulnSummary  string `json:"vulnSummary"`  // human-readable tooltip
 	// Exploit-risk badge driven by CISA KEV + FIRST EPSS. Empty for
 	// images with no Trivy report. See vulnExploitRisk() for tier rules.
 	ExploitRisk    string `json:"exploitRisk"`    // "kev" | "high-epss" | "low-epss" | "none" | ""
 	ExploitSummary string `json:"exploitSummary"` // e.g. "1 KEV (CVE-2024-12345)" or "EPSS 0.87 (CVE-…)"
 	KEVCVEs        string `json:"kevCVEs"`        // comma-separated for tooltip
+	// Pin state. Pinned: the reference carries @sha256 (exact bytes).
+	// TagMoved: pinned, but the registry now serves another digest for the
+	// tag (upstream re-tag; the pin is stale). RegistryDigest: what the
+	// registry serves for the tag now, "" if unknown.
+	Pinned         bool   `json:"pinned"`
+	Digest         string `json:"digest"`         // pinned digest, "" when pull-by-tag
+	RegistryDigest string `json:"registryDigest"` // registry's current digest for the tag
+	TagMoved       bool   `json:"tagMoved"`
 }
 
 // imageKey uniquely identifies an image ref + container type.
 type imageKey struct {
-	image    string // registry/repo (no tag)
-	tag      string
+	image         string // registry/repo (no tag)
+	tag           string
 	initContainer bool
 }
 
@@ -39,6 +47,7 @@ type imageAgg struct {
 	namespaces map[string]bool
 	pods       map[string]bool // namespace/podName for dedup
 	registry   string
+	digest     string // @sha256 the reference pins, "" when pull-by-tag
 }
 
 // GenerateImages produces a table of container images running across the cluster.
@@ -62,6 +71,7 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 
 	for _, p := range data.Pods {
 		registry, repo, tag := parseImageRef(p.Image)
+		_, _, _, digest := model.SplitImageRef(p.Image)
 		image := registry + "/" + repo
 
 		key := imageKey{image: image, tag: tag, initContainer: p.InitContainer}
@@ -72,6 +82,7 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 				namespaces: make(map[string]bool),
 				pods:       make(map[string]bool),
 				registry:   registry,
+				digest:     digest,
 			}
 			agg[key] = a
 		}
@@ -90,6 +101,7 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 
 		latest := "-"
 		outdated := false
+		registryDigest := ""
 		if checker != nil {
 			if v := checker.GetLatest(key.image, key.tag); v != "" {
 				latest = v
@@ -97,7 +109,12 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 					outdated = true
 				}
 			}
+			if d, ok := checker.GetDigest(key.image, key.tag); ok {
+				registryDigest = d
+			}
 		}
+		pinned := a.digest != ""
+		tagMoved := pinned && registryDigest != "" && registryDigest != a.digest && key.tag != a.digest
 
 		// Security risk from trivy VulnerabilityReports
 		secRisk := ""
@@ -126,6 +143,10 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 			ExploitRisk:    exploitRisk,
 			ExploitSummary: exploitSum,
 			KEVCVEs:        kevList,
+			Pinned:         pinned,
+			Digest:         a.digest,
+			RegistryDigest: registryDigest,
+			TagMoved:       tagMoved,
 		})
 	}
 
@@ -152,50 +173,16 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 	}
 }
 
-// parseImageRef splits a container image reference into registry, repo, and tag.
-// Examples:
-//
-//	"ghcr.io/foo/bar:v1.2" → "ghcr.io", "foo/bar", "v1.2"
-//	"nginx:latest"         → "docker.io", "library/nginx", "latest"
-//	"nginx"                → "docker.io", "library/nginx", "latest"
-//	"myregistry:5000/app:v1" → "myregistry:5000", "app", "v1"
+// parseImageRef splits a container image reference into registry, repo, and
+// tag. For a bare digest reference the "tag" column shows the digest itself
+// (the page's Tag cell already renders sha256 values shortened); a pinned
+// `repo:tag@sha256:…` shows its tag, with the digest carried on ImageRow.
 func parseImageRef(ref string) (registry, repo, tag string) {
-	// Handle @sha256: digest references
-	if idx := strings.Index(ref, "@"); idx != -1 {
-		tag = ref[idx+1:]
-		ref = ref[:idx]
-	}
-
-	// Split off tag
+	registry, repo, tag, digest := model.SplitImageRef(ref)
 	if tag == "" {
-		if idx := strings.LastIndex(ref, ":"); idx != -1 {
-			// Make sure the colon is after the last slash (not a port in registry)
-			slashIdx := strings.LastIndex(ref, "/")
-			if idx > slashIdx {
-				tag = ref[idx+1:]
-				ref = ref[:idx]
-			}
-		}
-		if tag == "" {
-			tag = "latest"
-		}
+		tag = digest
 	}
-
-	// Determine registry vs repo
-	parts := strings.SplitN(ref, "/", 2)
-	if len(parts) == 1 {
-		// No slash — Docker Hub official image
-		return "docker.io", "library/" + parts[0], tag
-	}
-
-	// Check if first part looks like a registry (has dot or colon, or is "localhost")
-	first := parts[0]
-	if strings.Contains(first, ".") || strings.Contains(first, ":") || first == "localhost" {
-		return first, parts[1], tag
-	}
-
-	// No registry indicator — Docker Hub user image
-	return "docker.io", ref, tag
+	return registry, repo, tag
 }
 
 func sortedKeys(m map[string]bool) []string {
