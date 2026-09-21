@@ -11,7 +11,7 @@ on:
 jobs:
   update-chart:
     name: Update Helm Chart Version
-    runs-on: cluster-vision
+    runs-on: ubuntu-latest
     steps:
       - name: Check required secrets
         run: |
