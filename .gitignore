@@ -38,3 +38,6 @@ npm-debug.log*
 
 # Duro session-hook cache (duro hook install)
 .claude/.duro-session.cache*
+
+# Local tool binaries (make lint downloads golangci-lint here)
+/bin/
