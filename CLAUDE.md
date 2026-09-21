@@ -120,6 +120,32 @@ has no `onClick`), which also makes sorting keyboard-operable.
 `app/components/markdown-table.tsx` renders API-provided markdown tables through
 the same Duro `Table` primitives.
 
+## Go commands (run at the repo root)
+
+Use `make`, not a bare `go`/`golangci-lint`. The `Makefile` exports
+`GOTOOLCHAIN` from go.mod's `go` line, so every target runs on exactly the
+version CI builds with — `go 1.25.7` in go.mod only forbids OLDER toolchains,
+so a newer local go is otherwise picked silently and you test something CI
+never compiles.
+
+| Command      | What it does                                             |
+| ------------ | -------------------------------------------------------- |
+| `make lint`  | golangci-lint at the pinned version, downloaded to `bin/` |
+| `make test`  | `go test ./...`, the invocation CI runs                   |
+| `make build` | `go build ./...`, the invocation CI runs                  |
+| `make fmt`   | `go fmt ./...`                                            |
+| `make vet`   | `go vet ./...`                                            |
+| `make help`  | Every target                                              |
+
+`GOLANGCI_LINT_VERSION` in the `Makefile` is the only place the linter version
+is written down; `.github/workflows/ci.yaml` reads it back out of there. A
+golangci-lint release is built against one Go minor and must not lag go.mod's,
+so bump it when the `go` line moves to a new minor.
+
+CI lints with `only-new-issues: true`, so it reports only what a change
+introduces; `make lint` lints the whole tree and can surface older findings the
+PR did not cause.
+
 ## Frontend commands (run in `web/`)
 
 | Command             | What it does                          |

@@ -48,10 +48,23 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # The linter version lives in the Makefile and nowhere else, so `make
+      # lint` on a workstation and this step run the same binary. The action
+      # is kept rather than calling `make lint` directly because
+      # only-new-issues below is the action's doing — it diffs the push/PR and
+      # passes --new-from-patch/--new-from-merge-base, which a plain
+      # `golangci-lint run` cannot reproduce — and because it caches.
+      - name: Resolve golangci-lint version
+        id: golangci
+        run: |
+          version=$(awk '/^GOLANGCI_LINT_VERSION[[:space:]]*\?=/{print $NF}' Makefile)
+          [ -n "$version" ] || { echo "::error::GOLANGCI_LINT_VERSION not found in Makefile"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Go lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.10.1
+          version: ${{ steps.golangci.outputs.version }}
           only-new-issues: true
 
       - name: Go test
