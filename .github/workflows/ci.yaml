@@ -7,10 +7,34 @@ on:
     branches: [main]
   workflow_call:
 
+# Hosted runners for everything that does not need the cluster (2026-09-21).
+# 90 days of ARC history: p90 queue wait 4-5 min on jobs whose p50 is 2-4 min,
+# 48-minute outliers on runner-pool incidents. ubuntu-latest picks up in
+# seconds with 4 vCPU; the public repo pays nothing for it. Only the
+# migration check still needs an in-cluster runner (it creates a
+# MigrationCheck with the pod's service account).
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      migrations: ${{ steps.filter.outputs.migrations }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            migrations:
+              - 'internal/store/migrations/**'
+              - 'internal/store/db.go'
+
   go:
     name: Go Build & Test
-    runs-on: cluster-vision
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,7 +63,7 @@ jobs:
 
   web:
     name: Web Build & Typecheck
-    runs-on: cluster-vision
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: read
@@ -82,7 +106,11 @@ jobs:
 
   migration-check:
     name: Migration check (prod-data clone)
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+    # Path-filtered like duro-app: 52 runs in 90 days caught 0 migration
+    # regressions (its only failures were clone-provisioning flakes) while the
+    # migrations changed 3 times in 180 days. Run it when they change.
+    needs: changes
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && needs.changes.outputs.migrations == 'true' }}
     runs-on: cluster-vision
     timeout-minutes: 20
     permissions:

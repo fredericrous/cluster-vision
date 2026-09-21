@@ -9,7 +9,6 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
-# Force bash (homelab-runner /bin/sh is dash; buildah/stable is fine either way).
 defaults:
   run:
     shell: bash
@@ -23,12 +22,12 @@ jobs:
   build:
     name: Build & push image
     needs: ci
-    runs-on: cluster-vision-ci
+    # ubuntu-24.04 ships buildah (1.33) and podman; no job container, so no
+    # pull through the NAS zot mirror at release time.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    container:
-      image: quay.io/buildah/stable
     outputs:
       version_img: ${{ steps.ver.outputs.version_img }}
     steps:
@@ -53,18 +52,20 @@ jobs:
           IMG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           MM=$(echo "$V" | awk -F. '{print $1"."$2}')
           printf '%s' "$NPM_TOKEN" > /tmp/npm_token
-          buildah bud --storage-driver=vfs \
+          # vfs was for the rootless buildah/stable container; the hosted
+          # runner's buildah uses its default (overlay) storage.
+          buildah bud \
             --secret id=npm_token,src=/tmp/npm_token \
             -t "$IMG:$V" -t "$IMG:$MM" .
           buildah login -u "$REG_USER" -p "$REG_PASS" ghcr.io
           for t in "$V" "$MM"; do
-            buildah push --storage-driver=vfs "$IMG:$t"
+            buildah push "$IMG:$t"
           done
 
   release:
     name: Release
     needs: build
-    runs-on: cluster-vision
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       packages: read
