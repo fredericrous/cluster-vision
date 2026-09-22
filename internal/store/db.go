@@ -6,6 +6,8 @@ import (
 	"embed"
 	"fmt"
 	"log/slog"
+	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -87,11 +89,25 @@ func runMigrations(ctx context.Context, databaseURL string) error {
 		return fmt.Errorf("creating migration source: %w", err)
 	}
 
-	db, err := sql.Open("pgx", databaseURL)
+	// The migrator opens its own database/sql connection. sql.Open is lazy;
+	// the first dial happens inside mpg.WithInstance, which runs a query and
+	// has no context — a dial that never completes (a server restarting
+	// mid-handshake, the state a freshly restored CNPG clone passes through)
+	// blocks here forever, past any deadline the caller holds. Give the
+	// connection its own connect_timeout so the dial can fail instead of
+	// hang, and ping it under ctx before handing it to the migrator.
+	migrateURL, err := withConnectTimeout(databaseURL, 10)
+	if err != nil {
+		return fmt.Errorf("migration database URL: %w", err)
+	}
+	db, err := sql.Open("pgx", migrateURL)
 	if err != nil {
 		return fmt.Errorf("opening database for migrations: %w", err)
 	}
 	defer func() { _ = db.Close() }()
+	if err := db.PingContext(ctx); err != nil {
+		return fmt.Errorf("pinging database for migrations: %w", err)
+	}
 
 	driver, err := mpg.WithInstance(db, &mpg.Config{})
 	if err != nil {
@@ -117,4 +133,19 @@ func runMigrations(ctx context.Context, databaseURL string) error {
 		m.GracefulStop <- true
 		return fmt.Errorf("applying migrations: %w", ctx.Err())
 	}
+}
+
+// withConnectTimeout sets libpq's connect_timeout (seconds) on a database URL
+// unless the caller already chose one.
+func withConnectTimeout(databaseURL string, seconds int) (string, error) {
+	u, err := url.Parse(databaseURL)
+	if err != nil {
+		return "", err
+	}
+	q := u.Query()
+	if q.Get("connect_timeout") == "" {
+		q.Set("connect_timeout", strconv.Itoa(seconds))
+	}
+	u.RawQuery = q.Encode()
+	return u.String(), nil
 }
