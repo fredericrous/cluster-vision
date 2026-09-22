@@ -23,6 +23,9 @@ type DB struct {
 }
 
 // New connects to PostgreSQL and runs migrations.
+// New is also what the in-cluster migration check exercises: a PR touching
+// this file or migrations/ builds the PR image, and the preview operator boots
+// /api against a prod-data clone until /api/config reports eam:true.
 func New(ctx context.Context, databaseURL string) (*DB, error) {
 	// ParseConfig so we can stamp application_name = cluster-vision before
 	// dialing — shows up in pg_stat_activity, which is how we triaged the
