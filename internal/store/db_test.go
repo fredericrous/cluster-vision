@@ -1,8 +1,10 @@
 package store
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWithConnectTimeout(t *testing.T) {
@@ -22,5 +24,20 @@ func TestWithConnectTimeout(t *testing.T) {
 	}
 	if !strings.Contains(kept, "connect_timeout=3") || strings.Contains(kept, "connect_timeout=10") {
 		t.Fatalf("an explicit connect_timeout must be kept: %s", kept)
+	}
+}
+
+func TestNewWithRetryGivesUpWithinBudget(t *testing.T) {
+	// Nothing listens on this port: every attempt fails fast with a refusal.
+	start := time.Now()
+	_, err := NewWithRetry(context.Background(), "postgres://u:p@127.0.0.1:1/db?sslmode=disable&connect_timeout=1", 5*time.Second)
+	if err == nil {
+		t.Fatal("expected an error against a closed port")
+	}
+	if !strings.Contains(err.Error(), "attempt(s)") {
+		t.Fatalf("error should count attempts: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 12*time.Second {
+		t.Fatalf("retry must respect the budget, took %s", elapsed)
 	}
 }

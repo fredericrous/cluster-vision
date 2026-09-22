@@ -78,10 +78,44 @@ func (db *DB) Close() {
 	db.Pool.Close()
 }
 
-// connectTimeout bounds New: pool creation, ping and migrations together.
-// Generous for a real migration set, far below anything a readiness probe or
-// a supervisor would wait for a process that has not started listening.
+// connectTimeout bounds one attempt of New: pool creation, ping and
+// migrations together. Generous for a real migration set, far below anything
+// a readiness probe or a supervisor would wait for a process that has not
+// started listening.
 const connectTimeout = 2 * time.Minute
+
+// NewWithRetry calls New until it succeeds or budget runs out, backing off
+// from 2 s to 15 s between attempts. A database that is up but not yet
+// stable — a freshly restored CNPG clone whose instance manager marks it
+// down for minutes while the copy-on-write volume warms, a primary mid
+// failover — refuses connections for a while and then serves normally; one
+// attempt at boot turns that into a process that runs EAM-less until it is
+// restarted by hand. Each attempt logs so a persistent refusal is visible.
+func NewWithRetry(ctx context.Context, databaseURL string, budget time.Duration) (*DB, error) {
+	deadline := time.Now().Add(budget)
+	wait := 2 * time.Second
+	for attempt := 1; ; attempt++ {
+		db, err := New(ctx, databaseURL)
+		if err == nil {
+			return db, nil
+		}
+		if time.Now().Add(wait).After(deadline) {
+			return nil, fmt.Errorf("after %d attempt(s): %w", attempt, err)
+		}
+		slog.Warn("EAM database not ready, retrying", "attempt", attempt, "retry_in", wait, "error", err)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wait):
+		}
+		if wait < 15*time.Second {
+			wait *= 2
+			if wait > 15*time.Second {
+				wait = 15 * time.Second
+			}
+		}
+	}
+}
 
 func runMigrations(ctx context.Context, databaseURL string) error {
 	d, err := iofs.New(migrationsFS, "migrations")

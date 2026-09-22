@@ -64,6 +64,11 @@ type Server struct {
 	clusterData *model.ClusterData // cached for EAM sync-on-demand
 }
 
+// dbConnectBudget is how long New keeps retrying the EAM database before
+// booting without it. Five minutes covers a CNPG clone's post-restore
+// instability (observed 2.5 min on 2026-09-22) and a primary failover.
+const dbConnectBudget = 5 * time.Minute
+
 // New creates a new Server.
 func New(cfg Config) (*Server, error) {
 	if cfg.ClusterName == "" {
@@ -112,9 +117,11 @@ func New(cfg Config) (*Server, error) {
 
 	s := &Server{cfg: cfg, k8sParsers: parsers, checker: checker, imageChecker: imageChecker, nodeChecker: nodeChecker, securityChecker: securityChecker, exploit: exploitEnricher}
 
-	// Optional EAM database
+	// Optional EAM database. Bounded retries: a database that is up but not
+	// yet stable (restored clone, failover) refuses connections for a while;
+	// one attempt would leave the process EAM-less until someone restarts it.
 	if cfg.DatabaseURL != "" {
-		db, err := store.New(context.Background(), cfg.DatabaseURL)
+		db, err := store.NewWithRetry(context.Background(), cfg.DatabaseURL, dbConnectBudget)
 		if err != nil {
 			slog.Error("failed to connect EAM database — EAM features disabled", "error", err)
 		} else {
