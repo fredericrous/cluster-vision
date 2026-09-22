@@ -64,18 +64,31 @@ type Server struct {
 	clusterData *model.ClusterData // cached for EAM sync-on-demand
 }
 
+// dbConnectBudget is how long New keeps retrying the EAM database before
+// booting without it. Five minutes covers a CNPG clone's post-restore
+// instability (observed 2.5 min on 2026-09-22) and a primary failover.
+const dbConnectBudget = 5 * time.Minute
+
 // New creates a new Server.
 func New(cfg Config) (*Server, error) {
 	if cfg.ClusterName == "" {
 		cfg.ClusterName = "Homelab"
 	}
 
-	k8s, err := parser.NewKubernetesParser(cfg.Kubeconfig, cfg.ClusterName, "")
-	if err != nil {
-		return nil, fmt.Errorf("creating k8s parser: %w", err)
+	// The primary cluster is optional, like the EAM database below: a process
+	// with no reachable API server (no kubeconfig, no in-cluster token) still
+	// boots, serves /api/config and the EAM routes, and reports empty cluster
+	// data. Making it fatal meant the in-cluster migration check — which runs
+	// this binary against a prod-data clone in a pod that mounts no service
+	// account token on purpose — could never come up (2026-09-22), and it is
+	// the wrong failure mode for a Deployment too: a broken RBAC binding should
+	// degrade the diagrams, not crash-loop the pod that owns the database.
+	var parsers []*parser.KubernetesParser
+	if k8s, err := parser.NewKubernetesParser(cfg.Kubeconfig, cfg.ClusterName, ""); err != nil {
+		slog.Error("no primary cluster: k8s parser unavailable — cluster discovery disabled", "error", err)
+	} else {
+		parsers = append(parsers, k8s)
 	}
-
-	parsers := []*parser.KubernetesParser{k8s}
 
 	for _, ds := range cfg.DataSources {
 		if ds.Type != "kubernetes" {
@@ -104,9 +117,11 @@ func New(cfg Config) (*Server, error) {
 
 	s := &Server{cfg: cfg, k8sParsers: parsers, checker: checker, imageChecker: imageChecker, nodeChecker: nodeChecker, securityChecker: securityChecker, exploit: exploitEnricher}
 
-	// Optional EAM database
+	// Optional EAM database. Bounded retries: a database that is up but not
+	// yet stable (restored clone, failover) refuses connections for a while;
+	// one attempt would leave the process EAM-less until someone restarts it.
 	if cfg.DatabaseURL != "" {
-		db, err := store.New(context.Background(), cfg.DatabaseURL)
+		db, err := store.NewWithRetry(context.Background(), cfg.DatabaseURL, dbConnectBudget)
 		if err != nil {
 			slog.Error("failed to connect EAM database — EAM features disabled", "error", err)
 		} else {
@@ -344,15 +359,25 @@ func (s *Server) refresh(ctx context.Context) {
 	// state must not be persisted as a snapshot or it would record a
 	// mass delete followed by a mass add.
 	partial := false
-	clusterData, err := s.k8sParsers[0].ParseAll(ctx)
-	if err != nil {
-		slog.Warn("partial parse", "error", err)
+	clusterData := &model.ClusterData{}
+	if len(s.k8sParsers) == 0 {
+		// No cluster at all (see New): nothing to discover, nothing to persist.
 		partial = true
+	} else {
+		var err error
+		clusterData, err = s.k8sParsers[0].ParseAll(ctx)
+		if err != nil {
+			slog.Warn("partial parse", "error", err)
+			partial = true
+		}
 	}
 	clusterData.PrimaryCluster = s.cfg.ClusterName
 
 	// Merge full data from secondary clusters.
-	for _, p := range s.k8sParsers[1:] {
+	for i, p := range s.k8sParsers {
+		if i == 0 {
+			continue
+		}
 		secondary, err := p.ParseAll(ctx)
 		if err != nil {
 			slog.Warn("partial parse", "error", err)
