@@ -14,3 +14,14 @@ packs:
   - .adr/packs/decisions.pack
 scopes: []
 keys:
+
+# Which parts of this repository have which traits (aval 1.7, SEMANTICS
+# section 2.5), as `aval traits --detect` proposed and a reviewer accepted.
+# Rules about a trait not named here are left out of the session hook and
+# counted; `aval rules --all-traits` lists them. `aval traits --check`, run
+# by this repository's gate, reports a package this stops describing.
+areas:
+  # cli: cmd/main.go — `package main`
+  "cmd/**": [cli]
+  # ui: web/package.json — `react` in dependencies
+  "web/**": [ui]
