@@ -1,6 +1,7 @@
 package versions
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -108,5 +109,46 @@ func TestListTagsCapsPagination(t *testing.T) {
 	}
 	if requests != maxTagPages || len(tags) != maxTagPages {
 		t.Fatalf("requests = %d, tags = %d; want %d pages", requests, len(tags), maxTagPages)
+	}
+}
+
+// Artifact Registry (behind registry.k8s.io) answers a tag list with every
+// tag plus a "manifest" map of every digest, well over 1 MiB; it must parse
+// whole instead of being cut mid-object.
+func TestListTagsReadsLargeResponses(t *testing.T) {
+	var body strings.Builder
+	body.WriteString(`{"child":[],"manifest":{`)
+	for i := 0; i < 12000; i++ {
+		if i > 0 {
+			body.WriteString(",")
+		}
+		fmt.Fprintf(&body, `"sha256:%064x":{"mediaType":"application/vnd.oci.image.index.v1+json","tag":[]}`, i)
+	}
+	body.WriteString(`},"name":"kube-apiserver","tags":["v1.34.0","v1.35.9"]}`)
+	if body.Len() <= 1<<20 {
+		t.Fatalf("fixture is %d bytes; must exceed the old 1 MiB cap", body.Len())
+	}
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body.String()))
+	}))
+	defer srv.Close()
+
+	ic := NewImageChecker()
+	ic.client = srv.Client()
+	tags, err := ic.listTags(strings.TrimPrefix(srv.URL, "https://"), "kube-apiserver")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tags) != 2 || tags[1] != "v1.35.9" {
+		t.Fatalf("tags = %v; want [v1.34.0 v1.35.9]", tags)
+	}
+}
+
+func TestReadCappedFailsInsteadOfTruncating(t *testing.T) {
+	if _, err := readCapped(strings.NewReader("12345"), 5); err != nil {
+		t.Fatalf("at the limit: %v", err)
+	}
+	if _, err := readCapped(strings.NewReader("123456"), 5); err == nil {
+		t.Fatal("over the limit: no error; the body would be silently truncated")
 	}
 }
