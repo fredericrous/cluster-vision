@@ -438,10 +438,28 @@ func (p *KubernetesParser) parseHTTPRoutes(ctx context.Context) []model.HTTPRout
 			}
 		}
 
-		// SectionName from first parentRef
-		if parentRefs, ok := spec["parentRefs"].([]interface{}); ok && len(parentRefs) > 0 {
-			if pr, ok := parentRefs[0].(map[string]interface{}); ok {
-				route.SectionName = strVal(pr, "sectionName")
+		// Parent refs; SectionName keeps the first one's for the
+		// security matrix's client-mTLS lookup.
+		if parentRefs, ok := spec["parentRefs"].([]interface{}); ok {
+			for _, raw := range parentRefs {
+				pr, ok := raw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				ref := model.ParentRef{
+					Group:       strVal(pr, "group"),
+					Kind:        strVal(pr, "kind"),
+					Namespace:   strVal(pr, "namespace"),
+					Name:        strVal(pr, "name"),
+					SectionName: strVal(pr, "sectionName"),
+				}
+				if ref.Namespace == "" {
+					ref.Namespace = route.Namespace
+				}
+				if len(route.ParentRefs) == 0 {
+					route.SectionName = ref.SectionName
+				}
+				route.ParentRefs = append(route.ParentRefs, ref)
 			}
 		}
 

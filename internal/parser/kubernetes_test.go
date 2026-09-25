@@ -118,3 +118,35 @@ func TestPolicyListFailuresMarkParsePartial(t *testing.T) {
 		})
 	}
 }
+
+var httpRouteGVR = schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"}
+
+func TestParseHTTPRoutesRecordsParentRefs(t *testing.T) {
+	route := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "gateway.networking.k8s.io/v1",
+		"kind":       "HTTPRoute",
+		"metadata":   map[string]interface{}{"name": "git", "namespace": "forgejo"},
+		"spec": map[string]interface{}{
+			"hostnames": []interface{}{"git.example.com"},
+			"parentRefs": []interface{}{
+				map[string]interface{}{"name": "public", "namespace": "gw-system", "sectionName": "git-https"},
+				map[string]interface{}{"group": "", "kind": "Service", "name": "git"},
+			},
+		},
+	}}
+	dyn := dynfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(),
+		map[schema.GroupVersionResource]string{httpRouteGVR: "HTTPRouteList"}, route)
+	p := &KubernetesParser{dynamic: dyn, clusterName: "c"}
+	routes := p.parseHTTPRoutes(context.Background())
+	if len(routes) != 1 {
+		t.Fatalf("routes = %d", len(routes))
+	}
+	r := routes[0]
+	want := []model.ParentRef{
+		{Namespace: "gw-system", Name: "public", SectionName: "git-https"},
+		{Kind: "Service", Namespace: "forgejo", Name: "git"},
+	}
+	if !slices.Equal(r.ParentRefs, want) || r.SectionName != "git-https" {
+		t.Fatalf("parentRefs = %+v, section %q", r.ParentRefs, r.SectionName)
+	}
+}
