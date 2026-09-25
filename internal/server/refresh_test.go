@@ -42,15 +42,17 @@ func (f *fakeParser) ParseAll(ctx context.Context) (*model.ClusterData, error) {
 // newTestServer builds a Server around fake parsers, with real (idle)
 // checkers: the fake cluster has no repos, images or nodes to look up.
 func newTestServer(parsers ...clusterParser) *Server {
-	return &Server{
+	s := &Server{
 		cfg:             Config{ClusterName: "test", RefreshInterval: time.Minute},
 		k8sParsers:      parsers,
 		checker:         versions.NewChecker(time.Minute, ""),
 		imageChecker:    versions.NewImageChecker(),
 		nodeChecker:     versions.NewNodeChecker(),
 		securityChecker: versions.NewSecurityChecker(),
-		exploit:         versions.NewExploitEnricher(nil),
+		kick:            make(chan struct{}, 1),
 	}
+	s.exploit.Store(versions.NewExploitEnricher(nil))
+	return s
 }
 
 // Concurrent refreshes, background re-renders and every reader of s.data
