@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/fredericrous/cluster-vision/internal/model"
 
@@ -69,6 +70,9 @@ func isKindMissing(err error) bool {
 		strings.Contains(msg, "no matches for kind")
 }
 
+// apiRequestTimeout bounds each Kubernetes API request (rest.Config.Timeout).
+const apiRequestTimeout = 60 * time.Second
+
 // NewKubernetesParser creates a parser from a kubeconfig path and cluster name.
 // Pass "" for kubeconfig to use in-cluster config.
 // The platform parameter is optional; when set, all parsed nodes inherit it as a fallback.
@@ -90,6 +94,13 @@ func NewKubernetesParser(kubeconfig, clusterName, platform string) (*KubernetesP
 	}
 	if err != nil {
 		return nil, fmt.Errorf("building k8s config: %w", err)
+	}
+	// client-go's default is no timeout: a request to an API server that
+	// accepted the connection and then stopped answering blocks forever,
+	// and with it the whole refresh. Bound every request; a list that
+	// legitimately needs longer than this is a list we should page.
+	if cfg.Timeout == 0 {
+		cfg.Timeout = apiRequestTimeout
 	}
 
 	typed, err := kubernetes.NewForConfig(cfg)
