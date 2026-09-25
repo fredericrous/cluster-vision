@@ -29,7 +29,7 @@ type GraphEdge struct {
 func (h *Handler) getGraph(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	apps, _, err := h.db.ListApplications(ctx, store.ApplicationFilter{Limit: 1000})
+	apps, _, err := h.db.ListApplications(ctx, store.ApplicationFilter{Limit: store.MaxApplicationsLimit})
 	if err != nil {
 		http.Error(w, jsonErr(err), http.StatusInternalServerError)
 		return
@@ -41,7 +41,9 @@ func (h *Handler) getGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var nodes []GraphNode
+	// Empty slices, not nil: the federation contract is arrays, and a
+	// consumer iterating `null` breaks on an empty landscape.
+	nodes := make([]GraphNode, 0, len(apps))
 	for _, app := range apps {
 		k8s, _ := h.db.ListK8sSources(ctx, app.ID)
 		caps, _ := h.db.ListAppCapabilities(ctx, app.ID)
@@ -69,7 +71,7 @@ func (h *Handler) getGraph(w http.ResponseWriter, r *http.Request) {
 		nodes = append(nodes, node)
 	}
 
-	var edges []GraphEdge
+	edges := make([]GraphEdge, 0, len(deps))
 	for _, d := range deps {
 		edges = append(edges, GraphEdge{
 			Source:      d.SourceAppID,

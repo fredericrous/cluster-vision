@@ -154,3 +154,13 @@ func TestCapabilityBadUUID(t *testing.T) {
 		t.Errorf("GET /api/eam/capabilities/not-uuid = %d, want 400", w.Code)
 	}
 }
+
+func TestListApplicationsNegativeOffset(t *testing.T) {
+	mux := newTestMux()
+	req := httptest.NewRequest("GET", "/api/eam/applications?offset=-1", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -153,20 +154,43 @@ func runMigrations(ctx context.Context, databaseURL string) error {
 		return fmt.Errorf("creating migrator: %w", err)
 	}
 
-	// golang-migrate has no context on Up; honour the deadline by racing it
-	// and asking the migrator to stop at the next boundary if time runs out.
+	// Closing the migrator before db (defers run last-in first-out) hands
+	// its connection, and the advisory lock it holds, back first.
+	defer func() { _, _ = m.Close() }()
+
+	return awaitMigration(ctx, m.Up, m.GracefulStop)
+}
+
+// awaitMigration runs up and honours ctx the only way golang-migrate allows:
+// Up has no context, so on cancellation it asks the migrator to stop at the
+// next migration boundary and then WAITS for Up to return. Returning early
+// instead would let the caller's deferred Close cut the connection under a
+// migration that is still executing, leaving schema_migrations dirty and
+// every later boot refusing to migrate until someone forces the version.
+func awaitMigration(ctx context.Context, up func() error, stop chan<- bool) error {
 	done := make(chan error, 1)
-	go func() { done <- m.Up() }()
+	go func() { done <- up() }()
+
+	var err error
 	select {
-	case err := <-done:
-		if err != nil && err != migrate.ErrNoChange {
-			return fmt.Errorf("applying migrations: %w", err)
-		}
-		return nil
+	case err = <-done:
 	case <-ctx.Done():
-		m.GracefulStop <- true
-		return fmt.Errorf("applying migrations: %w", ctx.Err())
+		slog.Warn("EAM database: migration deadline reached, stopping after the current migration")
+		select {
+		case stop <- true:
+		default: // a stop is already pending
+		}
+		err = <-done
+		if err == nil || errors.Is(err, migrate.ErrNoChange) {
+			// Up finished (or stopped cleanly) anyway; the deadline still
+			// failed this attempt, so report it rather than half-success.
+			return fmt.Errorf("applying migrations: %w", ctx.Err())
+		}
 	}
+	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("applying migrations: %w", err)
+	}
+	return nil
 }
 
 // withConnectTimeout sets libpq's connect_timeout (seconds) on a database URL

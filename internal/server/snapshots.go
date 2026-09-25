@@ -35,7 +35,7 @@ func (s *Server) captureSnapshot(parent context.Context, data *model.ClusterData
 	revs := diff.RevisionsOf(data)
 	hash := diff.ObservedHash(diagrams, revs)
 
-	prev, err := s.db.LatestSnapshot(ctx)
+	prev, err := s.database().LatestSnapshot(ctx)
 	if err != nil && !errors.Is(err, store.ErrNoSnapshot) {
 		cvmetrics.SnapshotsSkipped.WithLabelValues("error").Inc()
 		slog.Error("snapshot: loading latest failed", "error", err)
@@ -54,7 +54,7 @@ func (s *Server) captureSnapshot(parent context.Context, data *model.ClusterData
 	}
 
 	if prev != nil {
-		prevData, err := s.db.GetSnapshotData(ctx, prev.ID)
+		prevData, err := s.database().GetSnapshotData(ctx, prev.ID)
 		if err != nil {
 			slog.Warn("snapshot: previous data unreadable, summary will be empty", "id", prev.ID, "error", err)
 		} else {
@@ -73,7 +73,12 @@ func (s *Server) captureSnapshot(parent context.Context, data *model.ClusterData
 		}
 	}
 
-	if err := s.db.InsertSnapshot(ctx, snap, data); err != nil {
+	if err := s.database().InsertSnapshot(ctx, snap, data); err != nil {
+		if errors.Is(err, store.ErrSnapshotUnchanged) {
+			// Another writer stored this state since the check above.
+			cvmetrics.SnapshotsSkipped.WithLabelValues("unchanged").Inc()
+			return
+		}
 		cvmetrics.SnapshotsSkipped.WithLabelValues("error").Inc()
 		slog.Error("snapshot: insert failed", "error", err)
 		return
@@ -99,7 +104,7 @@ func (s *Server) snapshotRetentionLoop(ctx context.Context) {
 	prune := func() {
 		pctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
-		n, err := s.db.PruneSnapshots(pctx, full, daily)
+		n, err := s.database().PruneSnapshots(pctx, full, daily)
 		if err != nil {
 			slog.Warn("snapshot retention failed", "error", err)
 			return
@@ -166,7 +171,7 @@ func (s *Server) current() (*side, error) {
 }
 
 func (s *Server) sideFromSnapshot(ctx context.Context, snap *store.Snapshot) (*side, error) {
-	data, err := s.db.GetSnapshotData(ctx, snap.ID)
+	data, err := s.database().GetSnapshotData(ctx, snap.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -205,12 +210,12 @@ func (s *Server) resolveFrom(ctx context.Context, sel string, to *side) (*side, 
 		if to.snap.ID == "now" {
 			// The latest stored snapshot is usually the current state
 			// itself (dedup); "prev" means the one before that.
-			snap, err = s.db.LatestSnapshot(ctx)
+			snap, err = s.database().LatestSnapshot(ctx)
 			if err == nil && bytes.Equal(snap.ObservedHash, to.hash) {
-				snap, err = s.db.SnapshotBefore(ctx, snap.TakenAt)
+				snap, err = s.database().SnapshotBefore(ctx, snap.TakenAt)
 			}
 		} else {
-			snap, err = s.db.SnapshotBefore(ctx, to.snap.TakenAt)
+			snap, err = s.database().SnapshotBefore(ctx, to.snap.TakenAt)
 		}
 		if err != nil {
 			if errors.Is(err, store.ErrNoSnapshot) {
@@ -224,7 +229,7 @@ func (s *Server) resolveFrom(ctx context.Context, sel string, to *side) (*side, 
 		if to.snap.ID == "now" {
 			anchor.TakenAt = time.Now()
 		}
-		snap, err := s.db.SnapshotBeforeRevisionChange(ctx, anchor)
+		snap, err := s.database().SnapshotBeforeRevisionChange(ctx, anchor)
 		if err != nil {
 			if errors.Is(err, store.ErrNoSnapshot) {
 				return nil, &selectorError{"deploy", "no snapshot from a previous revision on record"}
@@ -245,21 +250,21 @@ func (s *Server) resolveFrom(ctx context.Context, sel string, to *side) (*side, 
 // lookup resolves an absolute selector to a stored snapshot.
 func (s *Server) lookup(ctx context.Context, sel string) (*store.Snapshot, error) {
 	if id, err := uuid.Parse(sel); err == nil {
-		snap, err := s.db.GetSnapshot(ctx, id)
+		snap, err := s.database().GetSnapshot(ctx, id)
 		if errors.Is(err, store.ErrNoSnapshot) {
 			return nil, &selectorError{sel, "no snapshot with that id"}
 		}
 		return snap, err
 	}
 	if t, err := time.Parse(time.RFC3339, sel); err == nil {
-		snap, err := s.db.SnapshotAt(ctx, t)
+		snap, err := s.database().SnapshotAt(ctx, t)
 		if errors.Is(err, store.ErrNoSnapshot) {
 			return nil, &selectorError{sel, "no snapshot at or before that time"}
 		}
 		return snap, err
 	}
 	if shaRe.MatchString(sel) {
-		snap, err := s.db.SnapshotBySHA(ctx, strings.ToLower(sel))
+		snap, err := s.database().SnapshotBySHA(ctx, strings.ToLower(sel))
 		if errors.Is(err, store.ErrNoSnapshot) {
 			return nil, &selectorError{sel, "no snapshot observed at a revision with that sha"}
 		}
@@ -391,7 +396,7 @@ func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 	}
 	limit, _ := strconv.Atoi(q.Get("limit"))
 
-	snaps, err := s.db.ListSnapshots(r.Context(), from, to, limit)
+	snaps, err := s.database().ListSnapshots(r.Context(), from, to, limit)
 	if err != nil {
 		writeErr(w, err)
 		return

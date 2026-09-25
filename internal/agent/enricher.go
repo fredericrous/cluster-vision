@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"log/slog"
+	"math"
 	"sync"
 
 	"github.com/fredericrous/cluster-vision/internal/store"
@@ -23,7 +24,7 @@ func NewEnricher(client *Client, db *store.DB) *Enricher {
 // EnrichAll runs the full AI enrichment pipeline for all non-overridden applications.
 // It runs capability inference (batch), per-app enrichment (parallel), and dependency inference (batch).
 func (e *Enricher) EnrichAll(ctx context.Context) error {
-	apps, _, err := e.db.ListApplications(ctx, store.ApplicationFilter{Limit: 1000})
+	apps, _, err := e.db.ListApplications(ctx, store.ApplicationFilter{Limit: store.MaxApplicationsLimit})
 	if err != nil {
 		return err
 	}
@@ -55,7 +56,7 @@ func (e *Enricher) EnrichAll(ctx context.Context) error {
 
 // EnrichNew runs AI enrichment only for apps that haven't been enriched yet (ai_confidence = 0).
 func (e *Enricher) EnrichNew(ctx context.Context) error {
-	apps, _, err := e.db.ListApplications(ctx, store.ApplicationFilter{Limit: 1000})
+	apps, _, err := e.db.ListApplications(ctx, store.ApplicationFilter{Limit: store.MaxApplicationsLimit})
 	if err != nil {
 		return err
 	}
@@ -76,7 +77,7 @@ func (e *Enricher) EnrichNew(ctx context.Context) error {
 	appContexts := e.buildAppContexts(ctx, newApps)
 
 	// Run capability inference for all apps (needs full list for context)
-	allApps, _, _ := e.db.ListApplications(ctx, store.ApplicationFilter{Limit: 1000})
+	allApps, _, _ := e.db.ListApplications(ctx, store.ApplicationFilter{Limit: store.MaxApplicationsLimit})
 	allContexts := e.buildAppContexts(ctx, allApps)
 	if err := e.inferCapabilities(ctx, allContexts); err != nil {
 		slog.Error("ai enricher: capability inference failed", "error", err)
@@ -261,7 +262,7 @@ func (e *Enricher) enrichApps(ctx context.Context, apps []store.Application, app
 					app.TimeCategoryReasoning = &enrichment.TimeCategoryReason
 				}
 			}
-			app.AIConfidence = float32(enrichment.Confidence)
+			app.AIConfidence = normalizeConfidence(enrichment.Confidence)
 
 			if err := e.db.UpdateApplication(ctx, &app); err != nil {
 				slog.Error("ai enricher: failed to save enrichment", "app", app.Name, "error", err)
@@ -281,32 +282,91 @@ func (e *Enricher) inferDependencies(ctx context.Context, appContexts []AppConte
 		return err
 	}
 
-	created := 0
-	for _, dep := range result.Dependencies {
-		source, err := e.db.GetApplicationByName(ctx, dep.Source)
-		if err != nil || source == nil {
-			continue
-		}
-		target, err := e.db.GetApplicationByName(ctx, dep.Target)
-		if err != nil || target == nil {
-			continue
-		}
-
-		reason := dep.Reason
-		d := &store.AppDependency{
-			SourceAppID: source.ID,
-			TargetAppID: target.ID,
-			Description: &reason,
-		}
-		if err := e.db.AddDependency(ctx, d); err != nil {
-			slog.Error("ai enricher: failed to add dependency", "source", dep.Source, "target", dep.Target, "error", err)
-			continue
-		}
-		created++
+	apps, _, err := e.db.ListApplications(ctx, store.ApplicationFilter{Limit: store.MaxApplicationsLimit})
+	if err != nil {
+		return err
+	}
+	ids := make(map[string]uuid.UUID, len(apps))
+	for _, a := range apps {
+		ids[a.Name] = a.ID
 	}
 
-	slog.Info("ai enricher: dependencies inferred", "created", created, "total_inferred", len(result.Dependencies))
+	// An empty answer for a non-trivial landscape is far more likely a bad
+	// completion than a real "nothing depends on anything"; pruning on it
+	// would wipe every inferred edge.
+	if len(result.Dependencies) == 0 && len(appContexts) > 1 {
+		slog.Warn("ai enricher: model inferred no dependencies — keeping the existing ones")
+		return nil
+	}
+
+	plan, dropped := planDependencies(result.Dependencies, ids)
+
+	// Replace the inferred edges of every app that was part of the prompt,
+	// including the ones the model now says depend on nothing: that is how
+	// an edge the model stopped inferring goes away.
+	created := 0
+	for _, ac := range appContexts {
+		srcID, ok := ids[ac.Name]
+		if !ok {
+			continue
+		}
+		deps := plan[srcID]
+		if err := e.db.ReplaceAIDependencies(ctx, srcID, deps); err != nil {
+			slog.Error("ai enricher: failed to store dependencies", "source", ac.Name, "error", err)
+			continue
+		}
+		created += len(deps)
+	}
+
+	slog.Info("ai enricher: dependencies inferred", "stored", created, "dropped", dropped, "total_inferred", len(result.Dependencies))
 	return nil
+}
+
+// planDependencies turns the model's answer into edges per source app. It
+// drops edges naming an unknown application, self-loops (an app does not
+// depend on itself; the schema rejects them too) and duplicates. dropped
+// counts what was discarded.
+func planDependencies(inferred []InferredDependency, ids map[string]uuid.UUID) (plan map[uuid.UUID][]store.AppDependency, dropped int) {
+	plan = make(map[uuid.UUID][]store.AppDependency)
+	seen := make(map[[2]uuid.UUID]bool)
+	for _, dep := range inferred {
+		src, ok1 := ids[dep.Source]
+		dst, ok2 := ids[dep.Target]
+		if !ok1 || !ok2 || src == dst || seen[[2]uuid.UUID{src, dst}] {
+			dropped++
+			continue
+		}
+		seen[[2]uuid.UUID{src, dst}] = true
+		reason := dep.Reason
+		plan[src] = append(plan[src], store.AppDependency{SourceAppID: src, TargetAppID: dst, Description: &reason})
+	}
+	return plan, dropped
+}
+
+// minEnrichedConfidence is the floor stored for a successful enrichment.
+// EnrichNew treats ai_confidence = 0 as "never enriched", so an app whose
+// enrichment is stored with 0 would be re-sent to the model on every sync
+// that creates an app, forever.
+const minEnrichedConfidence = 0.01
+
+// normalizeConfidence maps the model's self-reported confidence onto the
+// 0..1 the column means. Models regularly answer on a percentage scale
+// (85 for 0.85), so 1 < c <= 100 is read as a percentage; anything else
+// out of range, NaN or infinite is clamped. The result is never below
+// minEnrichedConfidence.
+func normalizeConfidence(c float64) float32 {
+	switch {
+	case math.IsNaN(c) || math.IsInf(c, 0) || c < 0:
+		c = 0
+	case c > 1 && c <= 100:
+		c /= 100
+	case c > 100:
+		c = 1
+	}
+	if c < minEnrichedConfidence {
+		c = minEnrichedConfidence
+	}
+	return float32(c)
 }
 
 func normalizeEnum(value, fallback string) string {

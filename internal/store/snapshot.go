@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,10 @@ const ModelVersion = 1
 
 // ErrNoSnapshot is returned when a selector matches nothing.
 var ErrNoSnapshot = errors.New("no such snapshot")
+
+// ErrSnapshotUnchanged is returned by InsertSnapshot when the latest stored
+// snapshot already has the same observed hash; nothing is written.
+var ErrSnapshotUnchanged = errors.New("snapshot unchanged")
 
 // Snapshot is the metadata of one persisted cluster state. The data itself
 // is loaded separately with GetSnapshotData.
@@ -170,8 +175,10 @@ func (db *DB) GetSnapshotData(ctx context.Context, id uuid.UUID) (*model.Cluster
 }
 
 // InsertSnapshot persists a snapshot and its revision rows in one
-// transaction. Dedup against the latest hash is the caller's job (it needs
-// the diagrams anyway to compute the summary).
+// transaction. It re-checks the latest observed hash under the snapshot
+// lock and returns ErrSnapshotUnchanged instead of writing a duplicate; the
+// caller's own pre-check (it needs the previous snapshot for the summary
+// anyway) is only an optimisation and can race.
 func (db *DB) InsertSnapshot(ctx context.Context, s *Snapshot, data *model.ClusterData) error {
 	if s.ID == uuid.Nil {
 		s.ID = uuid.New()
@@ -206,11 +213,22 @@ func (db *DB) InsertSnapshot(ctx context.Context, s *Snapshot, data *model.Clust
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// Single writer: the chart runs one replica, but if it ever scales,
-	// serialize snapshot writers so two pods can't both pass the
-	// "hash differs from latest" check.
+	// Single writer: the chart runs one replica, but if it ever scales (or
+	// two refreshes overlap), serialize snapshot writers and do the "hash
+	// differs from latest" check while holding the lock, so two writers
+	// can't both pass it.
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('cluster_vision_snapshots'))`); err != nil {
 		return fmt.Errorf("taking snapshot lock: %w", err)
+	}
+	var latest []byte
+	err = tx.QueryRow(ctx, `SELECT observed_hash FROM snapshots ORDER BY taken_at DESC LIMIT 1`).Scan(&latest)
+	switch {
+	case err == nil:
+		if bytes.Equal(latest, s.ObservedHash) {
+			return ErrSnapshotUnchanged
+		}
+	case !errors.Is(err, pgx.ErrNoRows):
+		return fmt.Errorf("reading latest snapshot hash: %w", err)
 	}
 
 	_, err = tx.Exec(ctx, `INSERT INTO snapshots (id, taken_at, observed_hash, model_version, revisions, summary, data)

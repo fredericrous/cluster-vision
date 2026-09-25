@@ -224,6 +224,13 @@ jobs:
             sleep 1
           done
           curl -fsS http://localhost:8080/api/health/live >/dev/null || fail "API never answered /api/health/live"
+          # Readiness: 503 until the first refresh, which finishes quickly
+          # with discovery disabled and no database configured.
+          for i in $(seq 1 120); do
+            curl -fsS http://localhost:8080/api/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://localhost:8080/api/health >/dev/null || fail "API never became ready (/api/health)"
           for i in $(seq 1 60); do
             code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/ || true)
             [ "$code" != 000 ] && break
@@ -238,6 +245,8 @@ jobs:
           rc=$(docker inspect -f '{{.State.ExitCode}}' cv)
           docker logs cv 2>&1 | tail -20
           [ "$rc" = 0 ] || fail "exit code $rc after SIGTERM (want 0)"
+          docker logs cv 2>&1 | grep -q 'api exited 0' || fail "the API did not exit 0 on SIGTERM"
+          docker logs cv 2>&1 | grep -q 'web exited 0' || fail "the web server did not exit 0 on SIGTERM"
           [ "$took" -lt 20 ] || fail "took ${took}s to stop; SIGTERM is not reaching both servers"
           echo "stopped cleanly in ${took}s"
 
