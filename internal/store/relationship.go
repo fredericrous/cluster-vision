@@ -47,6 +47,9 @@ func (db *DB) ListDependencies(ctx context.Context, appID uuid.UUID) ([]AppDepen
 		}
 		deps = append(deps, d)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("ListDependencies: iterating rows: %w", err)
+	}
 	return deps, nil
 }
 
@@ -79,6 +82,9 @@ func (db *DB) ListAppComponents(ctx context.Context, appID uuid.UUID) ([]ITCompo
 		}
 		components = append(components, c)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("ListAppComponents: iterating rows: %w", err)
+	}
 	return components, nil
 }
 
@@ -100,6 +106,9 @@ func (db *DB) ListAppCapabilities(ctx context.Context, appID uuid.UUID) ([]Busin
 			return nil, fmt.Errorf("scanning app capability: %w", err)
 		}
 		caps = append(caps, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("ListAppCapabilities: iterating rows: %w", err)
 	}
 	return caps, nil
 }
@@ -131,6 +140,9 @@ func (db *DB) ListK8sSources(ctx context.Context, appID uuid.UUID) ([]K8sSource,
 			return nil, fmt.Errorf("scanning k8s source: %w", err)
 		}
 		sources = append(sources, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("ListK8sSources: iterating rows: %w", err)
 	}
 	return sources, nil
 }
@@ -195,6 +207,9 @@ func (db *DB) AllDependencies(ctx context.Context) ([]AppDependency, error) {
 			return nil, fmt.Errorf("scanning dependency: %w", err)
 		}
 		deps = append(deps, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("AllDependencies: iterating rows: %w", err)
 	}
 	return deps, nil
 }

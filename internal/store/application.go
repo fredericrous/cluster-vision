@@ -11,28 +11,28 @@ import (
 )
 
 type Application struct {
-	ID                        uuid.UUID  `json:"id"`
-	Name                      string     `json:"name"`
-	Slug                      string     `json:"slug"`
-	DisplayName               *string    `json:"display_name"`
-	Description               *string    `json:"description"`
-	DescriptionSource         string     `json:"description_source"`
-	Status                    string     `json:"status"`
-	BusinessCriticality       string     `json:"business_criticality"`
-	BusinessCriticalitySource string     `json:"business_criticality_source"`
-	TechnicalRisk             string     `json:"technical_risk"`
-	TechnicalRiskSource       string     `json:"technical_risk_source"`
-	TechnicalRiskReasoning    *string    `json:"technical_risk_reasoning"`
-	LifecyclePhase            string     `json:"lifecycle_phase"`
-	TimeCategory              *string    `json:"time_category"`
-	TimeCategorySource        string     `json:"time_category_source"`
-	TimeCategoryReasoning     *string    `json:"time_category_reasoning"`
-	EndOfLifeDate             *string    `json:"end_of_life_date"`
-	Tags                      []string   `json:"tags"`
-	AIConfidence              float32    `json:"ai_confidence"`
-	ManualOverride            bool       `json:"manual_override"`
-	CreatedAt                 time.Time  `json:"created_at"`
-	UpdatedAt                 time.Time  `json:"updated_at"`
+	ID                        uuid.UUID `json:"id"`
+	Name                      string    `json:"name"`
+	Slug                      string    `json:"slug"`
+	DisplayName               *string   `json:"display_name"`
+	Description               *string   `json:"description"`
+	DescriptionSource         string    `json:"description_source"`
+	Status                    string    `json:"status"`
+	BusinessCriticality       string    `json:"business_criticality"`
+	BusinessCriticalitySource string    `json:"business_criticality_source"`
+	TechnicalRisk             string    `json:"technical_risk"`
+	TechnicalRiskSource       string    `json:"technical_risk_source"`
+	TechnicalRiskReasoning    *string   `json:"technical_risk_reasoning"`
+	LifecyclePhase            string    `json:"lifecycle_phase"`
+	TimeCategory              *string   `json:"time_category"`
+	TimeCategorySource        string    `json:"time_category_source"`
+	TimeCategoryReasoning     *string   `json:"time_category_reasoning"`
+	EndOfLifeDate             *string   `json:"end_of_life_date"`
+	Tags                      []string  `json:"tags"`
+	AIConfidence              float32   `json:"ai_confidence"`
+	ManualOverride            bool      `json:"manual_override"`
+	CreatedAt                 time.Time `json:"created_at"`
+	UpdatedAt                 time.Time `json:"updated_at"`
 }
 
 type ApplicationFilter struct {
@@ -111,6 +111,9 @@ func (db *DB) ListApplications(ctx context.Context, f ApplicationFilter) ([]Appl
 			return nil, 0, fmt.Errorf("scanning application: %w", err)
 		}
 		apps = append(apps, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("ListApplications: iterating rows: %w", err)
 	}
 	return apps, total, nil
 }

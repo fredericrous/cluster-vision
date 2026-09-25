@@ -81,6 +81,9 @@ func (db *DB) GetVersionHistory(ctx context.Context, appID uuid.UUID, from, to *
 		}
 		entries = append(entries, e)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("GetVersionHistory: iterating rows: %w", err)
+	}
 	return entries, nil
 }
 
@@ -150,6 +153,9 @@ func (db *DB) ListSyncLogs(ctx context.Context, limit int) ([]SyncLog, error) {
 			return nil, fmt.Errorf("scanning sync log: %w", err)
 		}
 		logs = append(logs, sl)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("ListSyncLogs: iterating rows: %w", err)
 	}
 	return logs, nil
 }
