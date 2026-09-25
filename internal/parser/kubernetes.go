@@ -755,25 +755,50 @@ func (p *KubernetesParser) parseHelmReleases(ctx context.Context) []model.HelmRe
 			repoNS = item.GetNamespace()
 		}
 
-		// Try to get appVersion from status
+		targetNS := strVal(spec, "targetNamespace")
+		releaseName := strVal(spec, "releaseName")
+
+		// appVersion, and the release name Flux actually installed under,
+		// from the latest history entry.
 		appVersion := ""
 		if status, ok := item.Object["status"].(map[string]interface{}); ok {
 			if history, ok := status["history"].([]interface{}); ok && len(history) > 0 {
 				if latest, ok := history[0].(map[string]interface{}); ok {
 					appVersion = strVal(latest, "appVersion")
+					if name := strVal(latest, "name"); name != "" {
+						releaseName = name
+					}
+					// spec.chartRef (an OCIRepository or HelmChart) names
+					// no chart or version; the history entry does.
+					if chartName == "" {
+						chartName = strVal(latest, "chartName")
+					}
+					if version == "" {
+						version = strVal(latest, "chartVersion")
+					}
 				}
+			}
+		}
+		if releaseName == "" {
+			// Flux's default; it also shortens names over 53 characters,
+			// which only the history entry above reports faithfully.
+			releaseName = item.GetName()
+			if targetNS != "" {
+				releaseName = targetNS + "-" + item.GetName()
 			}
 		}
 
 		result = append(result, model.HelmReleaseInfo{
-			Name:       item.GetName(),
-			Namespace:  item.GetNamespace(),
-			Cluster:    p.clusterName,
-			ChartName:  chartName,
-			Version:    version,
-			RepoName:   repoName,
-			RepoNS:     repoNS,
-			AppVersion: appVersion,
+			Name:            item.GetName(),
+			Namespace:       item.GetNamespace(),
+			Cluster:         p.clusterName,
+			ChartName:       chartName,
+			Version:         version,
+			RepoName:        repoName,
+			RepoNS:          repoNS,
+			TargetNamespace: targetNS,
+			ReleaseName:     releaseName,
+			AppVersion:      appVersion,
 		})
 	}
 	return result

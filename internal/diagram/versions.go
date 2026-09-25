@@ -43,23 +43,6 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 
 	vulns := model.NewVulnIndex(data.ImageVulns)
 
-	// Build release → images mapping via workload labels
-	// key: "cluster/namespace/releaseName" → set of image refs
-	releaseImages := make(map[string]map[string]bool)
-	for _, w := range data.Workloads {
-		relName := w.Labels["app.kubernetes.io/instance"]
-		if relName == "" {
-			continue
-		}
-		key := w.Cluster + "/" + w.Namespace + "/" + relName
-		if releaseImages[key] == nil {
-			releaseImages[key] = make(map[string]bool)
-		}
-		for _, img := range w.Images {
-			releaseImages[key][img] = true
-		}
-	}
-
 	// Sort releases by cluster, namespace, then name
 	sorted := make([]model.HelmReleaseInfo, len(data.HelmReleases))
 	copy(sorted, data.HelmReleases)
@@ -110,11 +93,10 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 		// Aggregate security risk across all images in this release's workloads
 		secRisk := ""
 		vulnSum := ""
-		relKey := rel.Cluster + "/" + rel.Namespace + "/" + rel.Name
-		if images, ok := releaseImages[relKey]; ok {
+		if images := rel.Images(data.Workloads); len(images) > 0 {
 			worstRisk := ""
 			var summaryParts []string
-			for img := range images {
+			for _, img := range images {
 				if v, ok := vulns.Lookup(rel.Cluster, img); ok {
 					r, s := vulnRisk(v)
 					if worstRisk == "" || vulnRiskPriority(r) > vulnRiskPriority(worstRisk) {
