@@ -56,7 +56,8 @@ rules:
     resources: ["helmreleases"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["source.toolkit.fluxcd.io"]
-    resources: ["helmrepositories"]
+    # gitrepositories: forge compare links for Flux revisions in diffs.
+    resources: ["helmrepositories", "gitrepositories"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["aquasecurity.github.io"]
     resources: ["vulnerabilityreports"]
