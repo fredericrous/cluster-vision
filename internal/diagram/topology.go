@@ -2,6 +2,7 @@ package diagram
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"golang.org/x/text/cases"
@@ -44,7 +45,7 @@ func GenerateTopologySections(data *model.ClusterData) []model.DiagramResult {
 		b.WriteString("    direction TB\n")
 		for i, n := range extra {
 			id := fmt.Sprintf("ex%d", i)
-			label := fmt.Sprintf("%s<br/>%s / %s<br/>%s", n.Name, n.CPU, n.Memory, n.IP)
+			label := fmt.Sprintf("%s<br/>%s / %s<br/>%s", mermaidText(n.Name), mermaidText(n.CPU), mermaidText(n.Memory), mermaidText(n.IP))
 			fmt.Fprintf(&b, "    %s[\"%s\"]\n", id, label)
 		}
 		b.WriteString("  end\n")
@@ -62,7 +63,7 @@ func GenerateTopologySections(data *model.ClusterData) []model.DiagramResult {
 func generateTFSourceDiagram(id string, src model.InfraSource, data *model.ClusterData) model.DiagramResult {
 	var b strings.Builder
 	b.WriteString("graph TB\n")
-	fmt.Fprintf(&b, "  subgraph cluster[\"%s\"]\n", src.Name)
+	fmt.Fprintf(&b, "  subgraph cluster[\"%s\"]\n", mermaidText(src.Name))
 	b.WriteString("    direction TB\n")
 
 	for i, node := range src.TerraformNodes {
@@ -83,7 +84,7 @@ func generateTFSourceDiagram(id string, src model.InfraSource, data *model.Clust
 			details = append(details, fmt.Sprintf("Data: %d GB", node.DataDiskGB))
 		}
 		if node.GPU != "" {
-			details = append(details, fmt.Sprintf("GPU: %s", node.GPU))
+			details = append(details, "GPU: "+mermaidText(node.GPU))
 		}
 
 		role := node.Role
@@ -92,12 +93,12 @@ func generateTFSourceDiagram(id string, src model.InfraSource, data *model.Clust
 		}
 
 		label := fmt.Sprintf("%s<br/>%s<br/>%s",
-			node.Name,
-			titleCaser.String(role),
+			mermaidText(node.Name),
+			mermaidText(titleCaser.String(role)),
 			strings.Join(details, " / "),
 		)
 		if node.IP != "" {
-			label += "<br/>" + node.IP
+			label += "<br/>" + mermaidText(node.IP)
 		}
 
 		fmt.Fprintf(&b, "    %s[\"%s\"]\n", nodeID, label)
@@ -117,7 +118,7 @@ func generateDockerComposeDiagram(id string, src model.InfraSource) model.Diagra
 	dc := src.DockerCompose
 	var b strings.Builder
 	b.WriteString("graph TB\n")
-	fmt.Fprintf(&b, "  subgraph host[\"%s\"]\n", src.Name)
+	fmt.Fprintf(&b, "  subgraph host[\"%s\"]\n", mermaidText(src.Name))
 	b.WriteString("    direction TB\n")
 
 	for i, svc := range dc.Services {
@@ -125,13 +126,13 @@ func generateDockerComposeDiagram(id string, src model.InfraSource) model.Diagra
 
 		var details []string
 		if svc.Image != "" {
-			details = append(details, svc.Image)
+			details = append(details, mermaidText(svc.Image))
 		}
 		if svc.IP != "" {
-			details = append(details, svc.IP)
+			details = append(details, mermaidText(svc.IP))
 		}
 		if len(svc.Ports) > 0 {
-			details = append(details, "Ports: "+strings.Join(svc.Ports, ", "))
+			details = append(details, "Ports: "+mermaidText(strings.Join(svc.Ports, ", ")))
 		}
 		if svc.Privileged {
 			details = append(details, "privileged")
@@ -142,7 +143,7 @@ func generateDockerComposeDiagram(id string, src model.InfraSource) model.Diagra
 			hostname = svc.Name
 		}
 
-		label := hostname
+		label := mermaidText(hostname)
 		if len(details) > 0 {
 			label += "<br/>" + strings.Join(details, "<br/>")
 		}
@@ -185,12 +186,17 @@ func generateK8sOnlyTopology(data *model.ClusterData) model.DiagramResult {
 			}
 
 			label := fmt.Sprintf("%s<br/>%s<br/>CPU: %s / Mem: %s<br/>%s",
-				node.Name, role, node.CPU, node.Memory, node.IP)
+				mermaidText(node.Name), role, mermaidText(node.CPU), mermaidText(node.Memory), mermaidText(node.IP))
 
-			for k, v := range node.Labels {
+			var gpuKeys []string
+			for k := range node.Labels {
 				if strings.Contains(strings.ToLower(k), "gpu") {
-					label += fmt.Sprintf("<br/>GPU: %s", v)
+					gpuKeys = append(gpuKeys, k)
 				}
+			}
+			sort.Strings(gpuKeys)
+			for _, k := range gpuKeys {
+				label += "<br/>GPU: " + mermaidText(node.Labels[k])
 			}
 
 			fmt.Fprintf(&b, "    %s[\"%s\"]\n", id, label)
@@ -258,35 +264,41 @@ func generateMeshTopology(data *model.ClusterData) *model.DiagramResult {
 		if localName == "" {
 			localName = "Local"
 		}
-		fmt.Fprintf(&b, "  subgraph local[\"%s\"]\n", localName)
+		fmt.Fprintf(&b, "  subgraph local[\"%s\"]\n", mermaidText(localName))
 		for i, gw := range data.EastWestGateways {
 			gwID := fmt.Sprintf("ewgw_l%d", i)
-			label := fmt.Sprintf("East-West Gateway<br/>%s:%d", gw.IP, gw.Port)
+			label := fmt.Sprintf("East-West Gateway<br/>%s:%d", mermaidText(gw.IP), gw.Port)
 			fmt.Fprintf(&b, "    %s[\"%s\"]\n", gwID, label)
 		}
 		b.WriteString("  end\n")
 	}
 
-	// Remote cluster subgraphs
-	remoteIdx := 0
+	// Remote cluster subgraphs, in network-name order so the remoteN IDs
+	// and the tunnel edges come out the same on every refresh.
+	networks := make([]string, 0, len(remoteNetworks))
+	for network := range remoteNetworks {
+		networks = append(networks, network)
+	}
+	sort.Strings(networks)
+
 	remoteGwIDs := make(map[string]string) // network → mermaid ID
-	for network, ip := range remoteNetworks {
+	for remoteIdx, network := range networks {
+		ip := remoteNetworks[network]
 		remoteName := networkName(network)
 		subID := fmt.Sprintf("remote%d", remoteIdx)
 		gwID := fmt.Sprintf("ewgw_r%d", remoteIdx)
 		remoteGwIDs[network] = gwID
 
-		fmt.Fprintf(&b, "  subgraph %s[\"%s\"]\n", subID, remoteName)
-		label := fmt.Sprintf("East-West Gateway<br/>%s:15443", ip)
+		fmt.Fprintf(&b, "  subgraph %s[\"%s\"]\n", subID, mermaidText(remoteName))
+		label := fmt.Sprintf("East-West Gateway<br/>%s:15443", mermaidText(ip))
 		fmt.Fprintf(&b, "    %s[\"%s\"]\n", gwID, label)
 		b.WriteString("  end\n")
-		remoteIdx++
 	}
 
 	// mTLS tunnel links between local and remote gateways
 	if hasLocalGW {
-		for _, remoteGwID := range remoteGwIDs {
-			fmt.Fprintf(&b, "  ewgw_l0 <-->|\"mTLS tunnel<br/>port 15443\"| %s\n", remoteGwID)
+		for _, network := range networks {
+			fmt.Fprintf(&b, "  ewgw_l0 <-->|\"mTLS tunnel<br/>port 15443\"| %s\n", remoteGwIDs[network])
 		}
 	}
 
@@ -296,7 +308,7 @@ func generateMeshTopology(data *model.ClusterData) *model.DiagramResult {
 		for i, se := range crossCluster {
 			seID := fmt.Sprintf("se%d", i)
 			host := strings.Join(se.Hosts, ", ")
-			fmt.Fprintf(&b, "    %s[\"%s\"]\n", seID, host)
+			fmt.Fprintf(&b, "    %s[\"%s\"]\n", seID, mermaidText(host))
 		}
 		b.WriteString("  end\n")
 

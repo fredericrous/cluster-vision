@@ -21,7 +21,6 @@ import (
 type Checker struct {
 	mu            sync.RWMutex
 	latest        map[string]string // "repoURL/chartName" → latest version
-	tokenCache    map[string]string // host → bearer token (for paginated requests)
 	interval      time.Duration
 	registryProxy string // e.g. "192.168.1.43:5000" — if set, OCI URLs through this host are resolved to upstream
 	client        *http.Client
@@ -40,25 +39,27 @@ func NewChecker(interval time.Duration, registryProxy string) *Checker {
 	}
 }
 
-// Check fetches latest versions for all unique repo+chart combinations.
-func (c *Checker) Check(repos []model.HelmRepositoryInfo, releases []model.HelmReleaseInfo) {
-	// Build repo lookup: "namespace/name" → HelmRepositoryInfo
+// chartRef is one repository+chart pair to look up.
+type chartRef struct {
+	repoURL   string
+	repoType  string
+	chartName string
+}
+
+// chartChecks lists the unique repository+chart pairs the releases use.
+// A release's sourceRef names a HelmRepository in its own cluster, so the
+// lookup is keyed cluster/namespace/name: two clusters may each have a
+// flux-system/charts repository pointing at different URLs.
+func chartChecks(repos []model.HelmRepositoryInfo, releases []model.HelmReleaseInfo) []chartRef {
 	repoByKey := make(map[string]model.HelmRepositoryInfo)
 	for _, r := range repos {
-		repoByKey[r.Namespace+"/"+r.Name] = r
+		repoByKey[r.Cluster+"/"+r.Namespace+"/"+r.Name] = r
 	}
 
-	// Collect unique chart+repo pairs
-	type chartRef struct {
-		repoURL   string
-		repoType  string
-		chartName string
-	}
 	seen := make(map[string]bool)
 	var checks []chartRef
-
 	for _, rel := range releases {
-		repo, ok := repoByKey[rel.RepoNS+"/"+rel.RepoName]
+		repo, ok := repoByKey[rel.Cluster+"/"+rel.RepoNS+"/"+rel.RepoName]
 		if !ok {
 			continue
 		}
@@ -74,6 +75,12 @@ func (c *Checker) Check(repos []model.HelmRepositoryInfo, releases []model.HelmR
 			chartName: rel.ChartName,
 		})
 	}
+	return checks
+}
+
+// Check fetches latest versions for all unique repo+chart combinations.
+func (c *Checker) Check(repos []model.HelmRepositoryInfo, releases []model.HelmReleaseInfo) {
+	checks := chartChecks(repos, releases)
 
 	results := make(map[string]string)
 
@@ -162,7 +169,11 @@ func (c *Checker) checkOCI(repoURL, chartName string) (string, error) {
 	var allTags []string
 	url := fmt.Sprintf("https://%s/v2/%s/tags/list?n=1000", host, imagePath)
 
-	for url != "" {
+	for page := 0; url != ""; page++ {
+		if page == maxTagPages {
+			slog.Warn("version check: tag list truncated", "chart", host+"/"+imagePath, "pages", maxTagPages)
+			break
+		}
 		body, nextURL, err := c.fetchWithAuthPaginated(url)
 		if err != nil {
 			return "", err
@@ -203,14 +214,6 @@ func (c *Checker) fetchWithAuthPaginated(url string) (body []byte, nextURL strin
 			return nil, "", fmt.Errorf("getting auth token: %w", err)
 		}
 
-		// Cache token for subsequent paginated requests
-		c.mu.Lock()
-		if c.tokenCache == nil {
-			c.tokenCache = make(map[string]string)
-		}
-		c.tokenCache[extractHost(url)] = token
-		c.mu.Unlock()
-
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			return nil, "", err
@@ -239,7 +242,7 @@ func (c *Checker) fetchWithAuthPaginated(url string) (body []byte, nextURL strin
 	return b, parseLinkNext(resp.Header.Get("Link"), url), err
 }
 
-// extractHost returns the scheme+host portion of a URL for token cache keying.
+// extractHost returns the scheme+host portion of a URL.
 func extractHost(rawURL string) string {
 	if idx := strings.Index(rawURL, "//"); idx >= 0 {
 		rest := rawURL[idx+2:]
@@ -407,7 +410,10 @@ func highestStableSemver(versions []string) string {
 	}
 
 	sort.Slice(semvers, func(i, j int) bool {
-		return semvers[j].less(semvers[i]) // descending
+		if c := semvers[i].compare(semvers[j]); c != 0 {
+			return c > 0 // descending
+		}
+		return semvers[i].original > semvers[j].original // same precedence, e.g. +build
 	})
 
 	return semvers[0].original
@@ -415,16 +421,23 @@ func highestStableSemver(versions []string) string {
 
 type semver struct {
 	major, minor, patch int
-	pre                 string
+	pre                 string // pre-release with its leading "-", e.g. "-rc.1"
+	build               string // build metadata with its leading "+", e.g. "+k3s1"
 	original            string
 }
 
+// parseSemver parses "[v]MAJOR.MINOR[.PATCH][-PRE][+BUILD]". Build
+// metadata is kept apart from the pre-release: "1.31.4+k3s1" is a release,
+// not a pre-release of 1.31.4.
 func parseSemver(s string) (semver, bool) {
 	v := semver{original: s}
 	s = strings.TrimPrefix(s, "v")
 
-	// Split off pre-release
-	if idx := strings.IndexAny(s, "-+"); idx >= 0 {
+	if idx := strings.IndexByte(s, '+'); idx >= 0 {
+		v.build = s[idx:]
+		s = s[:idx]
+	}
+	if idx := strings.IndexByte(s, '-'); idx >= 0 {
 		v.pre = s[idx:]
 		s = s[:idx]
 	}
@@ -453,22 +466,82 @@ func parseSemver(s string) (semver, bool) {
 	return v, true
 }
 
+// less orders by semver precedence; build metadata does not take part.
 func (a semver) less(b semver) bool {
-	if a.major != b.major {
-		return a.major < b.major
+	return a.compare(b) < 0
+}
+
+func (a semver) compare(b semver) int {
+	for _, d := range [][2]int{{a.major, b.major}, {a.minor, b.minor}, {a.patch, b.patch}} {
+		if d[0] != d[1] {
+			if d[0] < d[1] {
+				return -1
+			}
+			return 1
+		}
 	}
-	if a.minor != b.minor {
-		return a.minor < b.minor
+	return comparePre(strings.TrimPrefix(a.pre, "-"), strings.TrimPrefix(b.pre, "-"))
+}
+
+// comparePre compares pre-release strings by semver rules: none outranks
+// any; otherwise dot-separated identifiers left to right, numeric ones
+// numerically and below alphanumeric ones, a shorter list first on a tie.
+func comparePre(a, b string) int {
+	switch {
+	case a == b:
+		return 0
+	case a == "":
+		return 1
+	case b == "":
+		return -1
 	}
-	if a.patch != b.patch {
-		return a.patch < b.patch
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		x, y := as[i], bs[i]
+		if x == y {
+			continue
+		}
+		xn, xErr := strconv.Atoi(x)
+		yn, yErr := strconv.Atoi(y)
+		switch {
+		case xErr == nil && yErr == nil:
+			if xn < yn {
+				return -1
+			}
+			return 1
+		case xErr == nil:
+			return -1
+		case yErr == nil:
+			return 1
+		case x < y:
+			return -1
+		default:
+			return 1
+		}
 	}
-	// Pre-release versions have lower precedence than release
-	if a.pre != "" && b.pre == "" {
-		return true
+	switch {
+	case len(as) < len(bs):
+		return -1
+	case len(as) > len(bs):
+		return 1
 	}
-	if a.pre == "" && b.pre != "" {
+	return 0
+}
+
+// Outdated reports whether latest is a newer version than current. Both
+// are compared as semantic versions, so a "v" prefix and build metadata
+// ("v1.31.4+k3s1" against "v1.31.4") do not count as a difference, and a
+// deployed pre-release newer than the latest stable is not outdated. When
+// either side is not a semantic version the two are compared as strings,
+// "v" prefix aside.
+func Outdated(current, latest string) bool {
+	if current == "" || latest == "" {
 		return false
 	}
-	return a.pre < b.pre
+	c, cok := parseSemver(current)
+	l, lok := parseSemver(latest)
+	if cok && lok {
+		return c.less(l)
+	}
+	return strings.TrimPrefix(current, "v") != strings.TrimPrefix(latest, "v")
 }

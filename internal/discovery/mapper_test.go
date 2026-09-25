@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/fredericrous/cluster-vision/internal/model"
@@ -261,6 +262,11 @@ func TestPrimaryImageTag(t *testing.T) {
 		{"empty slice returns nil", nil, nil},
 		{"uses first image only", []string{"a:v1", "b:v2"}, strPtr("v1")},
 		{"sha tag", []string{"repo:sha-abc123"}, strPtr("sha-abc123")},
+		{"registry port", []string{"registry.local:5000/team/app:1.4.2"}, strPtr("1.4.2")},
+		{"registry port, no tag", []string{"registry.local:5000/team/app"}, nil},
+		{"tag and digest", []string{"ghcr.io/x/y:1.2.3@sha256:" + strings.Repeat("a", 64)}, strPtr("1.2.3")},
+		{"digest only", []string{"ghcr.io/x/y@sha256:" + strings.Repeat("a", 64)}, strPtr("sha256:" + strings.Repeat("a", 64))},
+		{"explicit latest", []string{"nginx:latest"}, strPtr("latest")},
 	}
 
 	for _, tt := range tests {
@@ -346,5 +352,22 @@ func TestBuildK8sSource(t *testing.T) {
 	}
 	if len(src.Images) != 1 || src.Images[0] != "grafana/grafana:10.0.0" {
 		t.Errorf("Images = %v, want [grafana/grafana:10.0.0]", src.Images)
+	}
+}
+
+// Standalone apps are grouped through a map; they must come out in a stable
+// order.
+func TestMapStandaloneWorkloadsIsSorted(t *testing.T) {
+	data := &model.ClusterData{}
+	for _, n := range []string{"zeta", "alpha", "mu", "beta", "omega", "kappa", "gamma", "delta", "epsilon"} {
+		data.Workloads = append(data.Workloads, model.WorkloadInfo{Name: n, Namespace: "default", Cluster: "homelab", Kind: "Deployment"})
+	}
+	for i := 0; i < 10; i++ {
+		apps := mapStandaloneWorkloads(data, nil)
+		for j := 1; j < len(apps); j++ {
+			if apps[j-1].Name > apps[j].Name {
+				t.Fatalf("apps not sorted: %s before %s", apps[j-1].Name, apps[j].Name)
+			}
+		}
 	}
 }

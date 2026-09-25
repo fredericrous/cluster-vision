@@ -79,9 +79,9 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 		if checker != nil {
 			if v := checker.GetLatest(repo.URL, rel.ChartName); v != "" {
 				latest = v
-				if latest != rel.Version && rel.Version != "" {
-					outdated = true
-				}
+				// "v1.2.3" and "1.2.3" are one version, and a deployed
+				// pre-release ahead of the latest stable is not behind.
+				outdated = versions.Outdated(rel.Version, latest)
 			}
 		}
 

@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/fredericrous/cluster-vision/internal/model"
@@ -105,8 +106,16 @@ func mapStandaloneWorkloads(data *model.ClusterData, helmApps []DiscoveredApp) [
 		g.images = append(g.images, w.Images...)
 	}
 
+	// Group keys in order: map order would shuffle the apps on every sync.
+	groupKeys := make([]string, 0, len(groups))
+	for k := range groups {
+		groupKeys = append(groupKeys, k)
+	}
+	sort.Strings(groupKeys)
+
 	var apps []DiscoveredApp
-	for _, g := range groups {
+	for _, k := range groupKeys {
+		g := groups[k]
 		wlName := g.name
 		wlKind := g.kind
 		apps = append(apps, DiscoveredApp{
@@ -160,14 +169,24 @@ func dedup(ss []string) []string {
 	return result
 }
 
-// PrimaryImageTag extracts the main image tag from a list of images.
+// PrimaryImageTag extracts the tag of the first image: its digest when it
+// is pinned by digest alone, nil when it names no tag at all (an implicit
+// "latest" is not recorded as one). The tag separator is the last ":"
+// after the last "/", so a registry port is never taken for a tag.
 func PrimaryImageTag(images []string) *string {
 	if len(images) == 0 {
 		return nil
 	}
-	parts := strings.SplitN(images[0], ":", 2)
-	if len(parts) == 2 {
-		return &parts[1]
+	ref := images[0]
+	_, _, tag, digest := model.SplitImageRef(ref)
+	if tag == "" {
+		if digest == "" {
+			return nil
+		}
+		return &digest
 	}
-	return nil
+	if name, _, _ := strings.Cut(ref, "@"); !strings.HasSuffix(name, ":"+tag) {
+		return nil // SplitImageRef's implicit "latest"
+	}
+	return &tag
 }

@@ -258,6 +258,7 @@ func (p *KubernetesParser) parseNodes(ctx context.Context) []model.NodeInfo {
 				roles = append(roles, strings.TrimPrefix(label, "node-role.kubernetes.io/"))
 			}
 		}
+		sort.Strings(roles) // map order would reshuffle them on every refresh
 
 		cpu := n.Status.Capacity.Cpu().String()
 		memBytes := n.Status.Capacity.Memory().Value()
@@ -437,10 +438,28 @@ func (p *KubernetesParser) parseHTTPRoutes(ctx context.Context) []model.HTTPRout
 			}
 		}
 
-		// SectionName from first parentRef
-		if parentRefs, ok := spec["parentRefs"].([]interface{}); ok && len(parentRefs) > 0 {
-			if pr, ok := parentRefs[0].(map[string]interface{}); ok {
-				route.SectionName = strVal(pr, "sectionName")
+		// Parent refs; SectionName keeps the first one's for the
+		// security matrix's client-mTLS lookup.
+		if parentRefs, ok := spec["parentRefs"].([]interface{}); ok {
+			for _, raw := range parentRefs {
+				pr, ok := raw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				ref := model.ParentRef{
+					Group:       strVal(pr, "group"),
+					Kind:        strVal(pr, "kind"),
+					Namespace:   strVal(pr, "namespace"),
+					Name:        strVal(pr, "name"),
+					SectionName: strVal(pr, "sectionName"),
+				}
+				if ref.Namespace == "" {
+					ref.Namespace = route.Namespace
+				}
+				if len(route.ParentRefs) == 0 {
+					route.SectionName = ref.SectionName
+				}
+				route.ParentRefs = append(route.ParentRefs, ref)
 			}
 		}
 
@@ -533,7 +552,7 @@ func (p *KubernetesParser) parseSecurityPolicies(ctx context.Context) []model.Se
 
 	list, err := p.dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Debug("no envoy gateway security policies found", "error", err)
+		p.listFailed("envoy gateway securitypolicies", err)
 		return nil
 	}
 
@@ -560,7 +579,7 @@ func (p *KubernetesParser) parseClientTrafficPolicies(ctx context.Context) []mod
 
 	list, err := p.dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Debug("no client traffic policies found", "error", err)
+		p.listFailed("envoy gateway clienttrafficpolicies", err)
 		return nil
 	}
 
@@ -1612,6 +1631,9 @@ func (p *KubernetesParser) parseVulnReports(ctx context.Context) []model.ImageVu
 	for _, v := range merged {
 		result = append(result, *v)
 	}
+	// Map order would otherwise reach the snapshot model and every consumer
+	// that keeps the first report it sees.
+	sort.Slice(result, func(i, j int) bool { return result[i].Image < result[j].Image })
 	return result
 }
 

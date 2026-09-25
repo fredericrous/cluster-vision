@@ -36,10 +36,13 @@ type ImageRow struct {
 	TagMoved       bool   `json:"tagMoved"`
 }
 
-// imageKey uniquely identifies an image ref + container type.
+// imageKey uniquely identifies an image ref + container type. The digest
+// is part of it: a pod pinned to tag@sha256 and one pulling the bare tag
+// are different rows, or the row's pin status would depend on pod order.
 type imageKey struct {
 	image         string // registry/repo (no tag)
 	tag           string
+	digest        string // @sha256 the reference pins, "" when pull-by-tag
 	initContainer bool
 }
 
@@ -47,7 +50,6 @@ type imageAgg struct {
 	namespaces map[string]bool
 	pods       map[string]bool // namespace/podName for dedup
 	registry   string
-	digest     string // @sha256 the reference pins, "" when pull-by-tag
 }
 
 // GenerateImages produces a table of container images running across the cluster.
@@ -70,7 +72,7 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 		_, _, _, digest := model.SplitImageRef(p.Image)
 		image := registry + "/" + repo
 
-		key := imageKey{image: image, tag: tag, initContainer: p.InitContainer}
+		key := imageKey{image: image, tag: tag, digest: digest, initContainer: p.InitContainer}
 
 		a, ok := agg[key]
 		if !ok {
@@ -78,7 +80,6 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 				namespaces: make(map[string]bool),
 				pods:       make(map[string]bool),
 				registry:   registry,
-				digest:     digest,
 			}
 			agg[key] = a
 		}
@@ -109,8 +110,8 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 				registryDigest = d
 			}
 		}
-		pinned := a.digest != ""
-		tagMoved := pinned && registryDigest != "" && registryDigest != a.digest && key.tag != a.digest
+		pinned := key.digest != ""
+		tagMoved := pinned && registryDigest != "" && registryDigest != key.digest && key.tag != key.digest
 
 		// Security risk from trivy VulnerabilityReports
 		secRisk := ""
@@ -122,8 +123,8 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 		imageRef := key.image + ":" + key.tag
 		if strings.HasPrefix(key.tag, "sha256:") {
 			imageRef = key.image + "@" + key.tag
-		} else if a.digest != "" {
-			imageRef += "@" + a.digest
+		} else if key.digest != "" {
+			imageRef += "@" + key.digest
 		}
 		if v, ok := vulns.Lookup("", imageRef); ok {
 			secRisk, vulnSum = vulnRisk(v)
@@ -146,7 +147,7 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 			ExploitSummary: exploitSum,
 			KEVCVEs:        kevList,
 			Pinned:         pinned,
-			Digest:         a.digest,
+			Digest:         key.digest,
 			RegistryDigest: registryDigest,
 			TagMoved:       tagMoved,
 		})
@@ -161,6 +162,9 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 		}
 		if rows[i].Tag != rows[j].Tag {
 			return rows[i].Tag < rows[j].Tag
+		}
+		if rows[i].Digest != rows[j].Digest {
+			return rows[i].Digest < rows[j].Digest
 		}
 		return rows[i].Type < rows[j].Type
 	})

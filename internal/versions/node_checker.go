@@ -33,6 +33,9 @@ type NodeChecker struct {
 	lastCheck time.Time
 	checking  atomic.Bool
 	client    *http.Client
+	// k8sReleaseBase serves stable-<major.minor>.txt, the latest patch of
+	// each Kubernetes minor (overridden in tests).
+	k8sReleaseBase string
 }
 
 // NewNodeChecker creates a new NodeChecker.
@@ -43,6 +46,7 @@ func NewNodeChecker() *NodeChecker {
 		client: &http.Client{
 			Timeout: 15 * time.Second,
 		},
+		k8sReleaseBase: "https://dl.k8s.io/release",
 	}
 }
 
@@ -192,62 +196,37 @@ func (nc *NodeChecker) fetchLatestGitHubRelease(repo string) (string, error) {
 	return release.TagName, nil
 }
 
-// fetchLatestK8sPatch fetches the latest patch release for a given Kubernetes minor version.
+// fetchLatestK8sPatch fetches the latest patch release for a given
+// Kubernetes minor version from the release marker the Kubernetes project
+// publishes per minor (dl.k8s.io/release/stable-1.31.txt → "v1.31.14").
+// Unlike a page of GitHub releases, it answers for old minors too: the
+// newest 100 releases only reach back a few minors.
 func (nc *NodeChecker) fetchLatestK8sPatch(minor string) (string, error) {
-	url := "https://api.github.com/repos/kubernetes/kubernetes/releases?per_page=100"
+	url := nc.k8sReleaseBase + "/stable-" + minor + ".txt"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
 
 	resp, err := nc.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("fetching k8s releases: %w", err)
+		return "", fmt.Errorf("fetching %s: %w", url, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("GitHub API returned %d", resp.StatusCode)
+		return "", fmt.Errorf("%s returned %d", url, resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
 	if err != nil {
 		return "", err
 	}
 
-	var releases []struct {
-		TagName    string `json:"tag_name"`
-		Prerelease bool   `json:"prerelease"`
-		Draft      bool   `json:"draft"`
+	tag := strings.TrimSpace(string(body))
+	sv, ok := parseSemver(tag)
+	if !ok || sv.pre != "" || !strings.HasPrefix(tag, "v"+minor+".") {
+		return "", fmt.Errorf("unexpected release marker %q for v%s.x", tag, minor)
 	}
-	if err := json.Unmarshal(body, &releases); err != nil {
-		return "", fmt.Errorf("parsing releases: %w", err)
-	}
-
-	prefix := "v" + minor + "."
-	var best semver
-	var bestTag string
-
-	for _, r := range releases {
-		if r.Prerelease || r.Draft {
-			continue
-		}
-		if !strings.HasPrefix(r.TagName, prefix) {
-			continue
-		}
-		sv, ok := parseSemver(r.TagName)
-		if !ok || sv.pre != "" {
-			continue
-		}
-		if bestTag == "" || best.less(sv) {
-			best = sv
-			bestTag = r.TagName
-		}
-	}
-
-	if bestTag == "" {
-		return "", fmt.Errorf("no stable release found for v%s.x", minor)
-	}
-	return bestTag, nil
+	return tag, nil
 }

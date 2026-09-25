@@ -279,8 +279,23 @@ type HTTPRouteInfo struct {
 	Namespace   string
 	Cluster     string
 	Hostnames   []string
+	SectionName string // sectionName of the first parentRef
+	// ParentRefs are spec.parentRefs: the Gateways (or mesh Services) the
+	// route asks to attach to. Empty for data parsed before they were
+	// recorded; consumers then fall back to hostname matching.
+	ParentRefs []ParentRef
+	Backends   []BackendRef
+}
+
+// ParentRef is one HTTPRoute spec.parentRefs entry. Namespace is resolved
+// to the route's own namespace when the ref leaves it out; Group and Kind
+// are kept as written (empty means the Gateway API default, a Gateway).
+type ParentRef struct {
+	Group       string
+	Kind        string
+	Namespace   string
+	Name        string
 	SectionName string
-	Backends    []BackendRef
 }
 
 // BackendRef is a reference to a backend service.

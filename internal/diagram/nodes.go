@@ -13,9 +13,12 @@ import (
 
 // NodeRow represents a single row in the cluster nodes table.
 type NodeRow struct {
-	Name             string `json:"name"`
-	Cluster          string `json:"cluster"`
-	Type             string `json:"type"` // "node" | "load-balancer"
+	Name    string `json:"name"`
+	Cluster string `json:"cluster"`
+	Type    string `json:"type"` // "node" | "load-balancer"
+	// Namespace is set on load-balancer rows only: a Service name is
+	// unique per namespace, not per cluster.
+	Namespace        string `json:"namespace,omitempty"`
 	Roles            string `json:"roles"`
 	IP               string `json:"ip"`
 	OS               string `json:"os"`
@@ -31,12 +34,12 @@ type NodeRow struct {
 	Memory           string `json:"memory"`
 	Arch             string `json:"arch"`
 	Provider         string `json:"provider"` // e.g. "proxmox"
-	Distro           string `json:"distro"`        // K8s distribution, e.g. "Talos", "K3s"
+	Distro           string `json:"distro"`   // K8s distribution, e.g. "Talos", "K3s"
 	GPU              string `json:"gpu"`
-	OSDisk           string `json:"osDisk"`        // e.g. "32 GB"
-	DataDisk         string `json:"dataDisk"`      // e.g. "100 GB"
-	SecurityRisk     string `json:"securityRisk"`  // "critical" | "warning" | "none" | ""
-	VulnSummary      string `json:"vulnSummary"`   // human-readable tooltip
+	OSDisk           string `json:"osDisk"`       // e.g. "32 GB"
+	DataDisk         string `json:"dataDisk"`     // e.g. "100 GB"
+	SecurityRisk     string `json:"securityRisk"` // "critical" | "warning" | "none" | ""
+	VulnSummary      string `json:"vulnSummary"`  // human-readable tooltip
 }
 
 // formatDiskGB formats a disk size in GB for display, omitting zero values.
@@ -76,11 +79,7 @@ func GenerateNodes(data *model.ClusterData, checker *versions.NodeChecker, secCh
 		if checker != nil {
 			if v := checker.GetLatestOS(n.OSImage); v != "" {
 				latestOS = v
-				cleanLatest := strings.TrimPrefix(latestOS, "v")
-				cleanCurrent := strings.TrimPrefix(osVer, "v")
-				if cleanLatest != "" && cleanCurrent != "" && cleanLatest != cleanCurrent {
-					osOutdated = true
-				}
+				osOutdated = versions.Outdated(osVer, latestOS)
 			}
 		}
 
@@ -89,9 +88,9 @@ func GenerateNodes(data *model.ClusterData, checker *versions.NodeChecker, secCh
 		if checker != nil {
 			if v := checker.GetLatestKubelet(n.KubeletVersion); v != "" {
 				latestKubelet = v
-				if latestKubelet != n.KubeletVersion {
-					kubeletOutdated = true
-				}
+				// Semver, not string, comparison: a distro's build
+				// metadata (v1.31.4+k3s1) is the same release as v1.31.4.
+				kubeletOutdated = versions.Outdated(n.KubeletVersion, latestKubelet)
 			}
 		}
 
@@ -187,11 +186,12 @@ func GenerateNodes(data *model.ClusterData, checker *versions.NodeChecker, secCh
 			cluster = data.PrimaryCluster
 		}
 		rows = append(rows, NodeRow{
-			Name:    lb.Name,
-			Cluster: cluster,
-			Type:    "load-balancer",
-			Roles:   lb.Namespace,
-			IP:      lb.IP,
+			Name:      lb.Name,
+			Cluster:   cluster,
+			Type:      "load-balancer",
+			Namespace: lb.Namespace,
+			Roles:     lb.Namespace,
+			IP:        lb.IP,
 		})
 	}
 
@@ -202,7 +202,10 @@ func GenerateNodes(data *model.ClusterData, checker *versions.NodeChecker, secCh
 		if rows[i].Cluster != rows[j].Cluster {
 			return rows[i].Cluster < rows[j].Cluster
 		}
-		return rows[i].Name < rows[j].Name
+		if rows[i].Name != rows[j].Name {
+			return rows[i].Name < rows[j].Name
+		}
+		return rows[i].Namespace < rows[j].Namespace
 	})
 
 	tableJSON, _ := json.Marshal(rows)

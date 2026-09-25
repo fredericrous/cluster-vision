@@ -1,8 +1,14 @@
 package versions
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/fredericrous/cluster-vision/internal/model"
 )
 
 func TestHighestStableSemver(t *testing.T) {
@@ -45,7 +51,9 @@ func TestParseSemver(t *testing.T) {
 		{"1.2.3", true, 1, 2, 3, ""},
 		{"v1.2.3", true, 1, 2, 3, ""},
 		{"1.2.3-rc1", true, 1, 2, 3, "-rc1"},
-		{"1.2.3+build", true, 1, 2, 3, "+build"},
+		{"1.2.3+build", true, 1, 2, 3, ""},
+		{"v1.31.4+k3s1", true, 1, 31, 4, ""},
+		{"1.2.3-rc.1+build.5", true, 1, 2, 3, "-rc.1"},
 		{"1.2", true, 1, 2, 0, ""},
 		{"latest", false, 0, 0, 0, ""},
 		{"1", false, 0, 0, 0, ""},
@@ -71,11 +79,11 @@ func TestParseSemver(t *testing.T) {
 
 func TestResolveUpstream(t *testing.T) {
 	tests := []struct {
-		name      string
-		proxy     string
-		repoURL   string
-		wantHost  string
-		wantPath  string
+		name     string
+		proxy    string
+		repoURL  string
+		wantHost string
+		wantPath string
 	}{
 		{
 			"ghcr through proxy",
@@ -187,6 +195,12 @@ func TestSemverLess(t *testing.T) {
 		{"1.0.0-rc1", "1.0.0", true},  // pre-release < release
 		{"1.0.0", "1.0.0-rc1", false}, // release > pre-release
 		{"1.0.0", "1.0.0", false},     // equal
+		{"1.0.0-alpha", "1.0.0-alpha.1", true},
+		{"1.0.0-alpha.1", "1.0.0-alpha.beta", true},
+		{"1.0.0-beta.2", "1.0.0-beta.11", true},
+		{"1.0.0-rc.1", "1.0.0-beta.11", false},
+		{"1.0.0+build.2", "1.0.0+build.1", false}, // build metadata ignored
+		{"1.0.0+k3s1", "1.0.0", false},
 	}
 
 	for _, tt := range tests {
@@ -198,5 +212,73 @@ func TestSemverLess(t *testing.T) {
 				t.Errorf("(%q).less(%q) = %v, want %v", tt.a, tt.b, got, tt.want)
 			}
 		})
+	}
+}
+
+// Two clusters may each have a HelmRepository with the same
+// namespace/name pointing at different URLs; each release must be checked
+// against its own cluster's.
+func TestChartChecksKeyRepositoriesByCluster(t *testing.T) {
+	repos := []model.HelmRepositoryInfo{
+		{Name: "charts", Namespace: "flux-system", Cluster: "home", Type: "default", URL: "https://home.example/charts"},
+		{Name: "charts", Namespace: "flux-system", Cluster: "nas", Type: "oci", URL: "oci://nas.example/charts"},
+	}
+	releases := []model.HelmReleaseInfo{
+		{Name: "app", Cluster: "home", ChartName: "app", RepoName: "charts", RepoNS: "flux-system"},
+		{Name: "app", Cluster: "nas", ChartName: "app", RepoName: "charts", RepoNS: "flux-system"},
+		{Name: "orphan", Cluster: "cloud", ChartName: "app", RepoName: "charts", RepoNS: "flux-system"},
+	}
+	got := chartChecks(repos, releases)
+	want := []chartRef{
+		{repoURL: "https://home.example/charts", repoType: "default", chartName: "app"},
+		{repoURL: "oci://nas.example/charts", repoType: "oci", chartName: "app"},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("checks = %+v, want %+v", got, want)
+	}
+}
+
+func TestOutdated(t *testing.T) {
+	cases := []struct {
+		current, latest string
+		want            bool
+	}{
+		{"v1.31.4+k3s1", "v1.31.4", false},
+		{"v1.31.4+k3s1", "v1.31.5", true},
+		{"v1.2.3", "1.2.3", false},
+		{"1.2.3", "v1.2.4", true},
+		{"2.0.0-rc.1", "1.9.0", false}, // deployed pre-release ahead of stable
+		{"2.0.0-rc.1", "2.0.0", true},
+		{"1.2.3", "1.2.3", false},
+		{"1.3.0", "1.2.9", false}, // ahead of the index
+		{"", "1.0.0", false},
+		{"2024.01", "2024.01", false},
+		{"weird", "other", true},
+	}
+	for _, c := range cases {
+		if got := Outdated(c.current, c.latest); got != c.want {
+			t.Errorf("Outdated(%q, %q) = %v, want %v", c.current, c.latest, got, c.want)
+		}
+	}
+}
+
+// Chart tag listings are capped like image ones.
+func TestCheckOCICapsPagination(t *testing.T) {
+	var requests int
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Link", `</v2/charts/app/tags/list?n=1000&last=x>; rel="next"`)
+		_, _ = w.Write([]byte(`{"tags":["1.0.0","1.1.0"]}`))
+	}))
+	defer srv.Close()
+
+	c := NewChecker(time.Minute, "")
+	c.client = srv.Client()
+	got, err := c.checkOCI("oci://"+strings.TrimPrefix(srv.URL, "https://")+"/charts", "app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != maxTagPages || got != "1.1.0" {
+		t.Fatalf("requests = %d, latest = %q; want %d pages and 1.1.0", requests, got, maxTagPages)
 	}
 }
