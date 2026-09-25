@@ -33,7 +33,7 @@ func GenerateNetwork(data *model.ClusterData) model.DiagramResult {
 		if clusterLabel == "" {
 			clusterLabel = data.PrimaryCluster
 		}
-		fmt.Fprintf(&b, "  %s{\"%s<br/>%s<br/>%s\"}\n", gwID, gw.Name, gw.Namespace, clusterLabel)
+		fmt.Fprintf(&b, "  %s{\"%s<br/>%s<br/>%s\"}\n", gwID, mermaidText(gw.Name), mermaidText(gw.Namespace), mermaidText(clusterLabel))
 		fmt.Fprintf(&b, "  internet -->|HTTPS| %s\n\n", gwID)
 
 		// Build hostname → listener mapping
@@ -78,9 +78,9 @@ func GenerateNetwork(data *model.ClusterData) model.DiagramResult {
 
 			var label string
 			if hostname != "" {
-				label = fmt.Sprintf("%s<br/><small>%s</small><br/><small>%s</small>", r.Name, hostname, routeCluster)
+				label = fmt.Sprintf("%s<br/><small>%s</small><br/><small>%s</small>", mermaidText(r.Name), mermaidText(hostname), mermaidText(routeCluster))
 			} else {
-				label = fmt.Sprintf("%s<br/><small>%s</small>", r.Name, routeCluster)
+				label = fmt.Sprintf("%s<br/><small>%s</small>", mermaidText(r.Name), mermaidText(routeCluster))
 			}
 
 			fmt.Fprintf(&b, "  %s[\"%s\"]\n", routeID, label)
@@ -89,7 +89,7 @@ func GenerateNetwork(data *model.ClusterData) model.DiagramResult {
 			if edgeLabel == "" {
 				edgeLabel = r.Name
 			}
-			fmt.Fprintf(&b, "  %s -->|\"%s\"| %s\n", gwID, edgeLabel, routeID)
+			fmt.Fprintf(&b, "  %s -->|\"%s\"| %s\n", gwID, mermaidText(edgeLabel), routeID)
 		}
 	}
 
@@ -101,7 +101,7 @@ func GenerateNetwork(data *model.ClusterData) model.DiagramResult {
 			if len(r.Hostnames) > 0 {
 				hostname = r.Hostnames[0]
 			}
-			label := fmt.Sprintf("%s<br/><small>%s</small>", r.Name, hostname)
+			label := fmt.Sprintf("%s<br/><small>%s</small>", mermaidText(r.Name), mermaidText(hostname))
 			fmt.Fprintf(&b, "  %s[\"%s\"]\n", routeID, label)
 		}
 	}
