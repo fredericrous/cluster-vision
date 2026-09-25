@@ -60,6 +60,12 @@ func (s *Syncer) Sync(ctx context.Context, data *model.ClusterData) *SyncResult 
 
 		// Upsert K8s source
 		existingSource, _ := s.db.FindK8sSource(ctx, app.ID, da.Cluster, da.Namespace, da.HelmRelease)
+		if existingSource == nil && da.LegacyNamespace != "" {
+			// Recorded under the HelmRelease object's namespace before;
+			// reuse that row so the upsert moves it instead of leaving a
+			// stale duplicate behind.
+			existingSource, _ = s.db.FindK8sSource(ctx, app.ID, da.Cluster, da.LegacyNamespace, da.HelmRelease)
+		}
 		src := BuildK8sSource(*app, da)
 		if existingSource != nil {
 			if existingSource.ManualOverride {

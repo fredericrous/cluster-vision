@@ -16,8 +16,9 @@ func TestMapClusterData(t *testing.T) {
 			HelmReleases: []model.HelmReleaseInfo{
 				{Name: "grafana", Namespace: "monitoring", Cluster: "homelab", ChartName: "grafana", Version: "7.0.0"},
 			},
-			Pods: []model.PodImageInfo{
-				{Namespace: "monitoring", Image: "grafana/grafana:10.0.0"},
+			Workloads: []model.WorkloadInfo{
+				{Name: "grafana", Namespace: "monitoring", Cluster: "homelab", Images: []string{"grafana/grafana:10.0.0"},
+					Labels: map[string]string{"app.kubernetes.io/instance": "grafana"}},
 			},
 			Nodes: []model.NodeInfo{
 				{Name: "node-1", Cluster: "homelab", KubeletVersion: "v1.30.0", Platform: "proxmox"},
@@ -80,9 +81,11 @@ func TestMapHelmReleases(t *testing.T) {
 			HelmReleases: []model.HelmReleaseInfo{
 				{Name: "loki", Namespace: "monitoring", Cluster: "homelab", ChartName: "loki", Version: "5.0.0"},
 			},
-			Pods: []model.PodImageInfo{
-				{Namespace: "monitoring", Image: "grafana/loki:2.9.0"},
-				{Namespace: "monitoring", Image: "grafana/loki-canary:2.9.0"},
+			Workloads: []model.WorkloadInfo{
+				{Name: "loki", Namespace: "monitoring", Cluster: "homelab", Images: []string{"grafana/loki:2.9.0"},
+					Labels: map[string]string{"app.kubernetes.io/instance": "loki"}},
+				{Name: "loki-canary", Namespace: "monitoring", Cluster: "homelab", Images: []string{"grafana/loki-canary:2.9.0"},
+					Labels: map[string]string{"app.kubernetes.io/instance": "loki"}},
 			},
 		}
 
@@ -195,27 +198,56 @@ func TestEnrichWithVulns(t *testing.T) {
 	})
 }
 
-func TestCollectImagesForNamespace(t *testing.T) {
-	pods := []model.PodImageInfo{
-		{Namespace: "monitoring", Image: "grafana:10"},
-		{Namespace: "monitoring", Image: "loki:2.9"},
-		{Namespace: "monitoring", Image: "grafana:10"}, // duplicate
-		{Namespace: "default", Image: "nginx:1.25"},
+func TestMapHelmReleasesImageAttribution(t *testing.T) {
+	flux := func(hr string) map[string]string {
+		return map[string]string{"helm.toolkit.fluxcd.io/name": hr, "helm.toolkit.fluxcd.io/namespace": "flux-system"}
+	}
+	data := &model.ClusterData{
+		HelmReleases: []model.HelmReleaseInfo{
+			// Kept in flux-system, installed into monitoring.
+			{Name: "grafana", Namespace: "flux-system", TargetNamespace: "monitoring", ReleaseName: "monitoring-grafana", Cluster: "a"},
+			{Name: "loki", Namespace: "flux-system", TargetNamespace: "monitoring", ReleaseName: "monitoring-loki", Cluster: "a"},
+			// Unlabelled by Flux: matched on instance label + namespace.
+			{Name: "redis", Namespace: "cache", ReleaseName: "redis", Cluster: "a"},
+		},
+		Workloads: []model.WorkloadInfo{
+			{Name: "grafana", Namespace: "monitoring", Cluster: "a", Images: []string{"grafana/grafana:11"}, Labels: flux("grafana")},
+			{Name: "loki", Namespace: "monitoring", Cluster: "a", Images: []string{"grafana/loki:3"}, Labels: flux("loki")},
+			// Same namespace name in another cluster: not grafana's.
+			{Name: "grafana", Namespace: "monitoring", Cluster: "b", Images: []string{"grafana/grafana:9"}, Labels: flux("grafana")},
+			// The Flux controllers the old namespace match attributed to
+			// every HelmRelease kept in flux-system.
+			{Name: "helm-controller", Namespace: "flux-system", Cluster: "a", Images: []string{"ghcr.io/fluxcd/helm-controller:v1"}},
+			{Name: "redis", Namespace: "cache", Cluster: "a", Images: []string{"redis:7"}, Labels: map[string]string{"app.kubernetes.io/instance": "redis"}},
+			{Name: "other", Namespace: "cache", Cluster: "a", Images: []string{"memcached:1"}, Labels: map[string]string{"app.kubernetes.io/instance": "other"}},
+		},
 	}
 
-	t.Run("filters by namespace and deduplicates", func(t *testing.T) {
-		images := collectImagesForNamespace(pods, "monitoring", "")
-		if len(images) != 2 {
-			t.Fatalf("expected 2 images, got %d: %v", len(images), images)
+	want := map[string]struct {
+		ns, legacy string
+		images     []string
+	}{
+		"grafana": {"monitoring", "flux-system", []string{"grafana/grafana:11"}},
+		"loki":    {"monitoring", "flux-system", []string{"grafana/loki:3"}},
+		"redis":   {"cache", "", []string{"redis:7"}},
+	}
+	for _, app := range mapHelmReleases(data) {
+		w := want[app.Name]
+		if app.Namespace != w.ns || app.LegacyNamespace != w.legacy {
+			t.Errorf("%s: namespace %q legacy %q; want %q, %q", app.Name, app.Namespace, app.LegacyNamespace, w.ns, w.legacy)
 		}
-	})
+		if len(app.Images) != len(w.images) || (len(w.images) > 0 && app.Images[0] != w.images[0]) {
+			t.Errorf("%s: images %v; want %v", app.Name, app.Images, w.images)
+		}
+	}
 
-	t.Run("no pods in namespace returns nil", func(t *testing.T) {
-		images := collectImagesForNamespace(pods, "nonexistent", "")
-		if len(images) != 0 {
-			t.Errorf("expected 0 images, got %d", len(images))
+	// grafana's standalone-looking workload in monitoring is covered by
+	// its release, now that the release counts as living there.
+	for _, app := range mapStandaloneWorkloads(data, mapHelmReleases(data)) {
+		if app.Cluster == "a" && app.Namespace == "monitoring" {
+			t.Errorf("release workload %s duplicated as a standalone app", app.Name)
 		}
-	})
+	}
 }
 
 func TestPrimaryImageTag(t *testing.T) {

@@ -165,3 +165,15 @@ The dev server expects the Go API at `http://localhost:8080` (override with
 "module"`, so it throws `ReferenceError: module is not defined` during SSR of
 `app/components/flow-diagram.tsx`. The component is lazy-loaded, so flow routes
 still render and hydrate on the client; the error is logged server-side only.
+
+<!-- amont:start -->
+
+## Git hooks (amont)
+
+This repository enforces pre-commit / pre-push checks that can REJECT a
+commit or a push. What runs, the branch-name rule, and why `git commit`
+and `git push` both need a long timeout — or a background run — are in
+[AGENTS.md](AGENTS.md) — read it before committing. Both files are
+generated: run `amont agents-md` after changing either.
+
+<!-- amont:end -->

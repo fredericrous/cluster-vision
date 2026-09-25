@@ -20,6 +20,11 @@ type DiscoveredApp struct {
 	Images       []string
 	VulnCritical int
 	VulnHigh     int
+
+	// LegacyNamespace is where an earlier version recorded this app's
+	// k8s_source: the HelmRelease object's namespace, when it differs
+	// from the namespace the release deploys to. Sync moves that row.
+	LegacyNamespace string
 }
 
 // MapClusterData extracts EAM entities from parsed ClusterData.
@@ -45,17 +50,19 @@ func mapHelmReleases(data *model.ClusterData) []DiscoveredApp {
 		chartVersion := hr.Version
 		helmRelease := hr.Name
 
-		// Collect images for this helm release's namespace
-		images := collectImagesForNamespace(data.Pods, hr.Namespace, hr.Cluster)
-
+		legacyNS := ""
+		if hr.DeployNamespace() != hr.Namespace {
+			legacyNS = hr.Namespace
+		}
 		apps = append(apps, DiscoveredApp{
-			Name:         name,
-			Namespace:    hr.Namespace,
-			Cluster:      hr.Cluster,
-			HelmRelease:  &helmRelease,
-			ChartName:    &chartName,
-			ChartVersion: &chartVersion,
-			Images:       images,
+			Name:            name,
+			Namespace:       hr.DeployNamespace(),
+			Cluster:         hr.Cluster,
+			HelmRelease:     &helmRelease,
+			ChartName:       &chartName,
+			ChartVersion:    &chartVersion,
+			Images:          hr.Images(data.Workloads),
+			LegacyNamespace: legacyNS,
 		})
 	}
 	return apps
@@ -124,20 +131,6 @@ func enrichWithVulns(apps []DiscoveredApp, vulns []model.ImageVuln) {
 			}
 		}
 	}
-}
-
-func collectImagesForNamespace(pods []model.PodImageInfo, namespace, cluster string) []string {
-	seen := make(map[string]bool)
-	var images []string
-	for _, p := range pods {
-		if p.Namespace == namespace {
-			if !seen[p.Image] {
-				seen[p.Image] = true
-				images = append(images, p.Image)
-			}
-		}
-	}
-	return images
 }
 
 // BuildK8sSource creates a K8sSource from a DiscoveredApp.
