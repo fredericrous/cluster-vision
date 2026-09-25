@@ -867,6 +867,21 @@ func (p *KubernetesParser) parseHelmRepositories(ctx context.Context) []model.He
 	return result
 }
 
+// isBareImageID reports whether s is an image ID ("sha256:<hex>", or the
+// hex alone) rather than an image reference.
+func isBareImageID(s string) bool {
+	hex := strings.TrimPrefix(s, "sha256:")
+	if len(hex) != 64 {
+		return false
+	}
+	for _, c := range hex {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 func (p *KubernetesParser) parsePods(ctx context.Context) []model.PodImageInfo {
 	list, err := p.typed.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -882,15 +897,17 @@ func (p *KubernetesParser) parsePods(ctx context.Context) []model.PodImageInfo {
 			continue
 		}
 
-		// Build image and imageID maps from status (status has resolved image refs)
+		// Build image and imageID maps from status (status has resolved image
+		// refs). The runtime sometimes reports status.image as the bare image
+		// ID ("sha256:<hex>") instead of a reference — containerd does for
+		// images the spec pins by digest — which names no repository at all;
+		// the spec's reference is kept then.
 		statusImages := make(map[string]string)
 		imageIDs := make(map[string]string)
-		for _, cs := range pod.Status.ContainerStatuses {
-			statusImages[cs.Name] = cs.Image
-			imageIDs[cs.Name] = cs.ImageID
-		}
-		for _, cs := range pod.Status.InitContainerStatuses {
-			statusImages[cs.Name] = cs.Image
+		for _, cs := range append(pod.Status.ContainerStatuses, pod.Status.InitContainerStatuses...) {
+			if !isBareImageID(cs.Image) {
+				statusImages[cs.Name] = cs.Image
+			}
 			imageIDs[cs.Name] = cs.ImageID
 		}
 
