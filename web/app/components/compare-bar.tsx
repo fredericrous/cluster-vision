@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import {
   Alert,
@@ -11,10 +11,14 @@ import {
   Text,
 } from "@duro-app/ui";
 import {
+  compareLinkKey,
+  compareLinkLabel,
   diffToMarkdown,
   formatWhen,
+  pageUrlFor,
   shortSha,
   snapshotLabel,
+  uniqueCompareLinks,
   useCompare,
 } from "../lib/compare";
 
@@ -53,13 +57,11 @@ export function CompareBar() {
     [location.pathname, location.search, navigate]
   );
 
-  const pageUrl = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return window.location.href;
-  }, []);
-
   const copyMarkdown = useCallback(async () => {
     if (!compare.diff) return;
+    // Read at click time: this bar lives in the persistent layout, so
+    // anything captured at mount would be the first page ever loaded.
+    const pageUrl = pageUrlFor(window.location.origin, location);
     try {
       await navigator.clipboard.writeText(diffToMarkdown(compare.diff, pageUrl));
       setCopied(true);
@@ -67,7 +69,7 @@ export function CompareBar() {
     } catch {
       setCopied(false);
     }
-  }, [compare.diff, pageUrl]);
+  }, [compare.diff, location]);
 
   if (!compare.enabled) return null;
 
@@ -190,10 +192,10 @@ export function CompareBar() {
               </Badge>
             </Link>
           ))}
-          {diff.compare_links.map((l) => (
-            <a key={l.cluster} href={l.url} target="_blank" rel="noreferrer">
+          {uniqueCompareLinks(diff.compare_links).map((l) => (
+            <a key={compareLinkKey(l)} href={l.url} target="_blank" rel="noreferrer">
               <Text variant="caption" color="accent">
-                {l.cluster}: {l.from_sha.slice(0, 7)}…{l.to_sha.slice(0, 7)} ↗
+                {compareLinkLabel(l)}: {l.from_sha.slice(0, 7)}…{l.to_sha.slice(0, 7)} ↗
               </Text>
             </a>
           ))}

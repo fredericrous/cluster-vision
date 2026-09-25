@@ -10,7 +10,11 @@ import {
   type DiffResponse,
 } from "../app/api.server";
 import {
+  compareLinkKey,
+  compareLinkLabel,
   diffToMarkdown,
+  pageUrlFor,
+  uniqueCompareLinks,
   fieldString,
   indexChanges,
   rowKey,
@@ -152,5 +156,46 @@ describe("compare helpers", () => {
     expect(md).not.toContain("Topology");
     expect(md).toContain("https://github.com/o/r/compare/aaaaaaa111...bbbbbbb222");
     expect(md.trim().endsWith("https://cv/certificates?before=a")).toBe(true);
+  });
+});
+
+describe("compare links", () => {
+  const link = (cluster: string, url: string, kustomization?: string) => ({
+    cluster,
+    kustomization,
+    from_sha: "aaaaaaa111",
+    to_sha: "bbbbbbb222",
+    url,
+  });
+
+  it("labels a link by cluster and repository when the API sends no kustomization", () => {
+    expect(compareLinkLabel(link("Homelab", "https://git.example/o/infra/compare/a...b"))).toBe(
+      "Homelab · o/infra"
+    );
+  });
+
+  it("prefers the kustomization when the API sends it", () => {
+    expect(
+      compareLinkLabel(link("Homelab", "https://git.example/o/infra/compare/a...b", "apps"))
+    ).toBe("Homelab · apps");
+  });
+
+  it("keys links uniquely and drops exact duplicates", () => {
+    const links = [
+      link("Homelab", "https://git.example/o/infra/compare/a...b"),
+      link("Homelab", "https://git.example/o/apps/compare/a...b"),
+      link("Homelab", "https://git.example/o/infra/compare/a...b"),
+    ];
+    const unique = uniqueCompareLinks(links);
+    expect(unique).toHaveLength(2);
+    expect(new Set(unique.map(compareLinkKey)).size).toBe(2);
+  });
+});
+
+describe("pageUrlFor", () => {
+  it("builds the URL of the current route, compare selectors included", () => {
+    expect(
+      pageUrlFor("https://cv.example", { pathname: "/network", search: "?before=prev&after=abc", hash: "" })
+    ).toBe("https://cv.example/network?before=prev&after=abc");
   });
 });
