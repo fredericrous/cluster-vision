@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
-import { Badge, Stack, Table } from "@duro-app/ui";
+import { Alert, Badge, Stack, Table } from "@duro-app/ui";
+import type { MermaidConfig } from "mermaid";
+import { useMermaid } from "../lib/use-mermaid";
 import styles from "./markdown-table.module.css";
 
 interface MarkdownTableProps {
@@ -74,40 +75,30 @@ export function MarkdownTable({ content }: MarkdownTableProps) {
   );
 }
 
+const pieConfig: MermaidConfig = {
+  theme: "dark",
+  themeVariables: {
+    darkMode: true,
+    background: "#1a1a2e",
+    primaryColor: "#6366f1",
+    primaryTextColor: "#e2e8f0",
+    primaryBorderColor: "#4f46e5",
+    secondaryColor: "#1e293b",
+    tertiaryColor: "#0f172a",
+    lineColor: "#94a3b8",
+    textColor: "#e2e8f0",
+  },
+};
+
 function MermaidInline({ content, id }: { content: string; id: string }) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const { ref, error } = useMermaid(content, `inline-${id}`, pieConfig);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function render() {
-      if (!containerRef.current) return;
-      const mermaid = (await import("mermaid")).default;
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: "dark",
-        themeVariables: {
-          darkMode: true,
-          background: "#1a1a2e",
-          primaryColor: "#6366f1",
-          primaryTextColor: "#e2e8f0",
-          primaryBorderColor: "#4f46e5",
-          secondaryColor: "#1e293b",
-          tertiaryColor: "#0f172a",
-          lineColor: "#94a3b8",
-          textColor: "#e2e8f0",
-        },
-      });
-      const uniqueId = `mermaid-inline-${id}-${Date.now()}`;
-      const { svg } = await mermaid.render(uniqueId, content);
-      if (!cancelled && containerRef.current) {
-        containerRef.current.innerHTML = svg;
-      }
-    }
-    render();
-    return () => {
-      cancelled = true;
-    };
-  }, [content, id]);
-
-  return <div ref={containerRef} className={styles.pieChart} />;
+  return (
+    <>
+      {error && (
+        <Alert variant="error">Failed to render chart: {error}</Alert>
+      )}
+      <div ref={ref} className={styles.pieChart} hidden={error !== null} />
+    </>
+  );
 }
