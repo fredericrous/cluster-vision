@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import type {
   Change,
+  CompareLink,
   DiagramDiff,
   DiffResponse,
   Snapshot,
@@ -79,6 +80,52 @@ export function snapshotLabel(s: SnapshotRef): string {
   return `${formatWhen(s.taken_at)} · ${shortSha(s)}`;
 }
 
+/** `owner/repo` of a forge compare URL (`https://host/owner/repo/compare/a...b`). */
+function repoOf(url: string): string | null {
+  try {
+    const parts = new URL(url).pathname.split("/").filter(Boolean);
+    const i = parts.indexOf("compare");
+    return i >= 2 ? `${parts[i - 2]}/${parts[i - 1]}` : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Compare links, one per distinct target. The API emits one link per
+ *  changed root kustomization, so a cluster can have several — and two
+ *  roots reconciling from the same repository yield the same URL twice. */
+export function uniqueCompareLinks(links: CompareLink[]): CompareLink[] {
+  const seen = new Set<string>();
+  return links.filter((l) => {
+    const k = compareLinkKey(l);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/** Stable identity of a compare link: the URL is unique per repo + range. */
+export function compareLinkKey(l: CompareLink): string {
+  return l.url;
+}
+
+/** What a compare link is for: the cluster, and the kustomization (or,
+ *  when the API does not send it, the repository) whose revision moved. */
+export function compareLinkLabel(l: CompareLink): string {
+  const what = l.kustomization || repoOf(l.url);
+  return what ? `${l.cluster} · ${what}` : l.cluster;
+}
+
+/** Absolute URL of the page the user is on, from the router location — not
+ *  a value captured once, since the compare bar lives in the persistent
+ *  layout and outlives every navigation. */
+export function pageUrlFor(
+  origin: string,
+  loc: { pathname: string; search: string; hash?: string }
+): string {
+  return `${origin}${loc.pathname}${loc.search}${loc.hash ?? ""}`;
+}
+
 /** Plain-text/Markdown export of a diff for incident channels. */
 export function diffToMarkdown(diff: DiffResponse, pageUrl: string): string {
   const lines: string[] = [];
@@ -87,8 +134,8 @@ export function diffToMarkdown(diff: DiffResponse, pageUrl: string): string {
     `**Cluster changes** ${shortSha(diff.from)} → ${shortSha(diff.to)} · ${total} change${total === 1 ? "" : "s"}${diff.drift ? " · changed with no new commit" : ""}`
   );
   lines.push(`${formatWhen(diff.from.taken_at)} → ${diff.to.id === "now" ? "now" : formatWhen(diff.to.taken_at)}`);
-  for (const l of diff.compare_links) {
-    lines.push(`- ${l.cluster}: ${l.url}`);
+  for (const l of uniqueCompareLinks(diff.compare_links)) {
+    lines.push(`- ${compareLinkLabel(l)}: ${l.url}`);
   }
   lines.push("");
   for (const d of diff.diagrams) {

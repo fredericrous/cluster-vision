@@ -75,6 +75,9 @@ export interface DiagramDiff {
 
 export interface CompareLink {
   cluster: string;
+  /** Root kustomization the link is for. The API emits one link per changed
+   *  root kustomization; older APIs omit this field. */
+  kustomization?: string;
   from_sha: string;
   to_sha: string;
   url: string;
