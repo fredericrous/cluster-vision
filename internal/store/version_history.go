@@ -2,10 +2,12 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 type VersionHistoryEntry struct {
@@ -21,16 +23,21 @@ type VersionHistoryEntry struct {
 }
 
 // InsertVersionHistory records a version snapshot for an application.
-// Only inserts if the latest entry differs (deduplication).
+// Only inserts if the latest entry differs (deduplication). The vuln counts
+// are part of the comparison: a new Trivy scan of the same tag that finds
+// (or clears) critical/high CVEs is a change worth recording.
 func (db *DB) InsertVersionHistory(ctx context.Context, e *VersionHistoryEntry) error {
-	// Check if latest entry is identical
-	var lastChart, lastTag *string
-	err := db.Pool.QueryRow(ctx, `SELECT chart_version, image_tag FROM version_history
-		WHERE app_id = $1 ORDER BY recorded_at DESC LIMIT 1`, e.AppID).Scan(&lastChart, &lastTag)
-	if err == nil {
-		if ptrEqual(lastChart, e.ChartVersion) && ptrEqual(lastTag, e.ImageTag) {
+	var last versionHistoryKey
+	err := db.Pool.QueryRow(ctx, `SELECT chart_version, image_tag, coalesce(vuln_critical, 0), coalesce(vuln_high, 0)
+		FROM version_history WHERE app_id = $1 ORDER BY recorded_at DESC LIMIT 1`, e.AppID).
+		Scan(&last.chart, &last.tag, &last.critical, &last.high)
+	switch {
+	case err == nil:
+		if last.equal(keyOf(e)) {
 			return nil // no change
 		}
+	case !errors.Is(err, pgx.ErrNoRows):
+		return fmt.Errorf("reading latest version history: %w", err)
 	}
 
 	if e.ID == uuid.Nil {
@@ -85,6 +92,21 @@ func (db *DB) GetVersionHistory(ctx context.Context, appID uuid.UUID, from, to *
 		return nil, fmt.Errorf("GetVersionHistory: iterating rows: %w", err)
 	}
 	return entries, nil
+}
+
+// versionHistoryKey is what makes two consecutive entries "the same".
+type versionHistoryKey struct {
+	chart, tag     *string
+	critical, high int
+}
+
+func keyOf(e *VersionHistoryEntry) versionHistoryKey {
+	return versionHistoryKey{e.ChartVersion, e.ImageTag, e.VulnCritical, e.VulnHigh}
+}
+
+func (k versionHistoryKey) equal(o versionHistoryKey) bool {
+	return ptrEqual(k.chart, o.chart) && ptrEqual(k.tag, o.tag) &&
+		k.critical == o.critical && k.high == o.high
 }
 
 func ptrEqual(a, b *string) bool {
