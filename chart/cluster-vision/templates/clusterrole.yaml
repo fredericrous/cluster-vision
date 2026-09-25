@@ -7,8 +7,15 @@ metadata:
     {{- include "cluster-vision.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
-    resources: ["namespaces", "nodes", "pods", "services", "persistentvolumes", "persistentvolumeclaims", "resourcequotas", "limitranges", "configmaps", "secrets", "serviceaccounts"]
+    resources: ["namespaces", "nodes", "pods", "services", "persistentvolumes", "persistentvolumeclaims", "resourcequotas", "limitranges", "configmaps", "serviceaccounts"]
     verbs: ["get", "list", "watch"]
+  {{- if .Values.rbac.readSecrets }}
+  # Opt-in (rbac.readSecrets): feeds the Secrets inventory only. The parser
+  # treats a Forbidden list as "inventory off", not as a failed refresh.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
   - apiGroups: ["apps"]
     resources: ["deployments", "statefulsets", "daemonsets"]
     verbs: ["get", "list", "watch"]
@@ -49,7 +56,8 @@ rules:
     resources: ["helmreleases"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["source.toolkit.fluxcd.io"]
-    resources: ["helmrepositories"]
+    # gitrepositories: forge compare links for Flux revisions in diffs.
+    resources: ["helmrepositories", "gitrepositories"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["aquasecurity.github.io"]
     resources: ["vulnerabilityreports"]

@@ -22,6 +22,8 @@ jobs:
       pull-requests: read
     outputs:
       migrations: ${{ steps.filter.outputs.migrations }}
+      mcp: ${{ steps.filter.outputs.mcp }}
+      image: ${{ steps.filter.outputs.image }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v4
@@ -31,6 +33,21 @@ jobs:
             migrations:
               - 'internal/store/migrations/**'
               - 'internal/store/db.go'
+            # internal/diagram: mcp/server.test.ts checks the MCP diagram
+            # enum against the IDs the Go generators emit.
+            mcp:
+              - 'mcp/**'
+              - 'internal/diagram/**'
+              - '.github/workflows/ci.yaml'
+            # What the runtime image is made of, beyond the Go and web code the
+            # other jobs already build.
+            image:
+              - 'Dockerfile'
+              - 'docker-entrypoint.sh'
+              - 'web/package.json'
+              - 'web/package-lock.json'
+              - 'go.mod'
+              - '.github/workflows/ci.yaml'
 
   go:
     name: Go Build & Test
@@ -114,8 +131,115 @@ jobs:
         if: ${{ !contains(fromJSON(steps.attest.outputs.gates), 'pre-push-run-tests-js') }}
         run: npm run typecheck
 
+      - name: Test
+        if: ${{ !contains(fromJSON(steps.attest.outputs.gates), 'pre-push-run-tests-js') }}
+        run: npm run test:run
+
       - name: Build
         run: npm run build
+
+  # The stdio MCP server in mcp/. Path-filtered on pull requests only, and
+  # fail-open: it runs whenever the filter did not succeed, and on every
+  # push/workflow_call. A skipped job reports as passed.
+  mcp:
+    name: MCP Build & Test
+    needs: changes
+    if: ${{ always() && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.mcp == 'true') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mcp/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+  # Builds the runtime image and runs it the way the chart does: non-root,
+  # read-only root filesystem with a /tmp tmpfs, no capabilities. Both
+  # servers must answer, and a SIGTERM must stop both cleanly (exit 0) well
+  # inside the kubelet's grace period. Path-filtered on pull requests only,
+  # fail-open like the mcp job; a skipped job reports as passed.
+  image:
+    name: Image smoke test
+    needs: changes
+    if: ${{ always() && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.image == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: cluster-vision:smoke
+          secrets: |
+            npm_token=${{ secrets.NPM_TOKEN }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run it as the chart does and stop it
+        run: |
+          set -eu
+          docker run -d --name cv \
+            --read-only --tmpfs /tmp \
+            --cap-drop ALL --security-opt no-new-privileges \
+            -e CLUSTER_NAME=smoke -e PORT=3000 -e API_URL=http://localhost:8080 \
+            -p 3000:3000 -p 8080:8080 \
+            cluster-vision:smoke -port=8080 -refresh=5m
+
+          fail() { echo "::error::$1"; docker logs cv; exit 1; }
+          [ "$(docker exec cv id -u)" != 0 ] || fail "container runs as root"
+
+          # No cluster here: the API boots with discovery disabled.
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:8080/api/health/live >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://localhost:8080/api/health/live >/dev/null || fail "API never answered /api/health/live"
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/ || true)
+            [ "$code" != 000 ] && break
+            sleep 1
+          done
+          [ "$code" != 000 ] || fail "web server never answered on :3000"
+          echo "web answered HTTP $code"
+
+          start=$(date +%s)
+          docker stop -t 25 cv
+          took=$(( $(date +%s) - start ))
+          rc=$(docker inspect -f '{{.State.ExitCode}}' cv)
+          docker logs cv 2>&1 | tail -20
+          [ "$rc" = 0 ] || fail "exit code $rc after SIGTERM (want 0)"
+          [ "$took" -lt 20 ] || fail "took ${took}s to stop; SIGTERM is not reaching both servers"
+          echo "stopped cleanly in ${took}s"
 
   # Pull-based migration check (2026-09-22). The cluster does the work: this
   # job publishes the artifact and hands the check over. It builds the PR
