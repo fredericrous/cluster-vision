@@ -74,6 +74,11 @@ func (s *Server) captureSnapshot(parent context.Context, data *model.ClusterData
 	}
 
 	if err := s.db.InsertSnapshot(ctx, snap, data); err != nil {
+		if errors.Is(err, store.ErrSnapshotUnchanged) {
+			// Another writer stored this state since the check above.
+			cvmetrics.SnapshotsSkipped.WithLabelValues("unchanged").Inc()
+			return
+		}
 		cvmetrics.SnapshotsSkipped.WithLabelValues("error").Inc()
 		slog.Error("snapshot: insert failed", "error", err)
 		return

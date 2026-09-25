@@ -2,9 +2,11 @@ package store
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 
+	"github.com/fredericrous/cluster-vision/internal/model"
 	"github.com/google/uuid"
 )
 
@@ -12,7 +14,7 @@ import (
 //
 //	CV_TEST_DATABASE_URL=postgres://u:p@localhost:5432/db?sslmode=disable go test ./internal/store/
 //
-// Every test works in its own schema-wide data (fresh application rows), so
+// Every test creates its own rows (fresh applications, unique hashes), so
 // they tolerate a database that already has the migrations applied.
 func testDB(t *testing.T) *DB {
 	t.Helper()
@@ -70,5 +72,18 @@ func TestK8sSourceIdentityIsUnique(t *testing.T) {
 	// duplicate a swallowed lookup error used to create.
 	if err := db.UpsertK8sSource(ctx, &K8sSource{AppID: app.ID, Cluster: "c", Namespace: "ns", HelmRelease: &hr}); err == nil {
 		t.Fatal("expected the unique index to reject a duplicate k8s source")
+	}
+}
+
+func TestInsertSnapshotRejectsUnchangedHashUnderLock(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	hash := []byte(uuid.NewString())
+	if err := db.InsertSnapshot(ctx, &Snapshot{ObservedHash: hash}, &model.ClusterData{}); err != nil {
+		t.Fatal(err)
+	}
+	err := db.InsertSnapshot(ctx, &Snapshot{ObservedHash: hash}, &model.ClusterData{})
+	if !errors.Is(err, ErrSnapshotUnchanged) {
+		t.Fatalf("second insert of the same hash = %v, want ErrSnapshotUnchanged", err)
 	}
 }
