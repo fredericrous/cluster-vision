@@ -115,14 +115,10 @@ func mapStandaloneWorkloads(data *model.ClusterData, helmApps []DiscoveredApp) [
 }
 
 func enrichWithVulns(apps []DiscoveredApp, vulns []model.ImageVuln) {
-	vulnMap := make(map[string]*model.ImageVuln)
-	for i := range vulns {
-		vulnMap[vulns[i].Image] = &vulns[i]
-	}
-
+	idx := model.NewVulnIndex(vulns)
 	for i := range apps {
 		for _, img := range apps[i].Images {
-			if v, ok := vulnMap[img]; ok {
+			if v, ok := idx.Lookup(apps[i].Cluster, img); ok {
 				apps[i].VulnCritical += v.Critical
 				apps[i].VulnHigh += v.High
 			}

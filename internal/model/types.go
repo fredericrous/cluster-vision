@@ -33,7 +33,8 @@ type ClusterData struct {
 
 // ImageVuln represents vulnerability counts for a container image from trivy-operator.
 type ImageVuln struct {
-	Image    string // "registry/repo:tag"
+	Image    string // ImageKey of the scanned artifact
+	Digest   string // "sha256:<hex>" of the scanned artifact, when trivy gives one
 	Cluster  string
 	Critical int
 	High     int

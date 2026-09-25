@@ -1499,16 +1499,14 @@ func (p *KubernetesParser) parseVulnReports(ctx context.Context) []model.ImageVu
 		server := strVal(registry, "server")
 		repository := strVal(artifact, "repository")
 		tag := strVal(artifact, "tag")
-		if repository == "" {
+		digest := strVal(artifact, "digest")
+		if repository == "" || (tag == "" && digest == "") {
 			continue
 		}
 
-		imageRef := repository
-		if server != "" {
-			imageRef = server + "/" + repository
-		}
-		if tag != "" {
-			imageRef = imageRef + ":" + tag
+		imageRef := trivyImageKey(server, repository, tag, digest)
+		if !strings.HasPrefix(digest, "sha256:") {
+			digest = ""
 		}
 
 		// Extract summary counts
@@ -1574,6 +1572,7 @@ func (p *KubernetesParser) parseVulnReports(ctx context.Context) []model.ImageVu
 		} else {
 			merged[key] = &model.ImageVuln{
 				Image:    imageRef,
+				Digest:   digest,
 				Cluster:  p.clusterName,
 				Critical: critical,
 				High:     high,
@@ -1589,6 +1588,34 @@ func (p *KubernetesParser) parseVulnReports(ctx context.Context) []model.ImageVu
 		result = append(result, *v)
 	}
 	return result
+}
+
+// trivyImageKey is the model.ImageKey of a VulnerabilityReport's artifact.
+// Trivy names Docker Hub "index.docker.io" where pod specs say "docker.io"
+// or nothing at all, so the raw report ref never equals a pod's image.
+//
+// For a pod image pinned by digest, trivy-operator writes the whole pod
+// reference into artifact.tag ("docker.io/library/haproxy:3.2-alpine", or
+// "docker.io/coturn/coturn" with no tag at all). The real tag is recovered
+// from it; without one the key falls back to the digest.
+func trivyImageKey(server, repository, tag, digest string) string {
+	if strings.ContainsAny(tag, "/:") {
+		_, _, t, _ := model.SplitImageRef(tag)
+		if last := tag[strings.LastIndex(tag, "/")+1:]; !strings.Contains(last, ":") {
+			t = "" // SplitImageRef's "latest" default, not a real tag
+		}
+		tag = t
+	}
+	ref := repository
+	if server != "" {
+		ref = server + "/" + repository
+	}
+	if tag != "" {
+		ref += ":" + tag
+	} else {
+		ref += "@" + digest
+	}
+	return model.ImageKey(ref)
 }
 
 func intVal(m map[string]interface{}, key string) int {

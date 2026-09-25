@@ -11,13 +11,13 @@ import (
 
 // VersionRow represents a single row in the versions table.
 type VersionRow struct {
-	Cluster   string `json:"cluster"`
-	Release   string `json:"release"`
-	Namespace string `json:"namespace"`
-	Chart     string `json:"chart"`
-	Version   string `json:"version"`
-	Latest    string `json:"latest"`
-	Outdated  bool   `json:"outdated"`
+	Cluster      string `json:"cluster"`
+	Release      string `json:"release"`
+	Namespace    string `json:"namespace"`
+	Chart        string `json:"chart"`
+	Version      string `json:"version"`
+	Latest       string `json:"latest"`
+	Outdated     bool   `json:"outdated"`
 	RepoType     string `json:"repoType"`
 	RepoURL      string `json:"repoUrl"`
 	SecurityRisk string `json:"securityRisk"` // "critical" | "warning" | "none" | ""
@@ -41,11 +41,7 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 		repoByKey[r.Cluster+"/"+r.Namespace+"/"+r.Name] = r
 	}
 
-	// Build vulnerability lookup: imageRef → ImageVuln
-	vulnByImage := make(map[string]model.ImageVuln)
-	for _, v := range data.ImageVulns {
-		vulnByImage[v.Image] = v
-	}
+	vulns := model.NewVulnIndex(data.ImageVulns)
 
 	// Build release → images mapping via workload labels
 	// key: "cluster/namespace/releaseName" → set of image refs
@@ -119,7 +115,7 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 			worstRisk := ""
 			var summaryParts []string
 			for img := range images {
-				if v, ok := vulnByImage[img]; ok {
+				if v, ok := vulns.Lookup(rel.Cluster, img); ok {
 					r, s := vulnRisk(v)
 					if worstRisk == "" || vulnRiskPriority(r) > vulnRiskPriority(worstRisk) {
 						worstRisk = r

@@ -61,11 +61,7 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 		}
 	}
 
-	// Build vulnerability lookup: imageRef → ImageVuln
-	vulnByImage := make(map[string]model.ImageVuln)
-	for _, v := range data.ImageVulns {
-		vulnByImage[v.Image] = v
-	}
+	vulns := model.NewVulnIndex(data.ImageVulns)
 
 	agg := make(map[imageKey]*imageAgg)
 
@@ -122,8 +118,14 @@ func GenerateImages(data *model.ClusterData, checker *versions.ImageChecker) mod
 		exploitRisk := ""
 		exploitSum := ""
 		kevList := ""
+		// Rows span clusters, so the worst report any cluster has.
 		imageRef := key.image + ":" + key.tag
-		if v, ok := vulnByImage[imageRef]; ok {
+		if strings.HasPrefix(key.tag, "sha256:") {
+			imageRef = key.image + "@" + key.tag
+		} else if a.digest != "" {
+			imageRef += "@" + a.digest
+		}
+		if v, ok := vulns.Lookup("", imageRef); ok {
 			secRisk, vulnSum = vulnRisk(v)
 			exploitRisk, exploitSum = vulnExploitRisk(v)
 			kevList = strings.Join(v.KEVCVEs, ",")
