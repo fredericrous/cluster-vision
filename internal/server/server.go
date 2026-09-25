@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fredericrous/cluster-vision/internal/agent"
@@ -43,19 +44,37 @@ type Config struct {
 	LiteLLMModel string // default model
 }
 
+// clusterParser is what refresh needs from a cluster: the production
+// implementation is *parser.KubernetesParser; tests substitute fakes.
+type clusterParser interface {
+	ParseAll(ctx context.Context) (*model.ClusterData, error)
+	ClusterName() string
+}
+
 // Server serves the diagram API.
+//
+// Concurrency: data, clusterData, gen and friends are guarded by mu and are
+// copy-on-write. A published data slice (and the ClusterData behind it) is
+// never modified again — readers take the slice under RLock and use it after
+// unlocking (encoding, hashing, diffing), so a writer must build a new slice
+// and swap it in whole.
 type Server struct {
 	cfg             Config
-	k8sParsers      []*parser.KubernetesParser
+	k8sParsers      []clusterParser
 	checker         *versions.Checker
 	imageChecker    *versions.ImageChecker
 	nodeChecker     *versions.NodeChecker
 	securityChecker *versions.SecurityChecker
 	exploit         *versions.ExploitEnricher // CISA KEV + FIRST EPSS, nil tolerated
 	mu              sync.RWMutex
-	data            []model.DiagramResult
+	data            []model.DiagramResult // copy-on-write, see above
+	gen             uint64                // bumped by every published refresh
 	lastGen         time.Time
-	lastPartial     bool // last refresh had a failed list call somewhere
+	lastPartial     bool            // last refresh had a failed list call somewhere
+	partialClusters map[string]bool // clusters whose list calls failed last refresh
+	// Single-flight guards for the slow upstream checks refresh starts in
+	// the background: one of each at a time, however slow the upstream.
+	chartsCheck, imagesCheck, nodesCheck, securityCheck atomic.Bool
 	// EAM (nil when DATABASE_URL not set)
 	db          *store.DB
 	syncer      *discovery.Syncer
@@ -83,7 +102,7 @@ func New(cfg Config) (*Server, error) {
 	// account token on purpose — could never come up (2026-09-22), and it is
 	// the wrong failure mode for a Deployment too: a broken RBAC binding should
 	// degrade the diagrams, not crash-loop the pod that owns the database.
-	var parsers []*parser.KubernetesParser
+	var parsers []clusterParser
 	if k8s, err := parser.NewKubernetesParser(cfg.Kubeconfig, cfg.ClusterName, ""); err != nil {
 		slog.Error("no primary cluster: k8s parser unavailable — cluster discovery disabled", "error", err)
 	} else {
@@ -348,9 +367,29 @@ func (s *Server) generate(clusterData *model.ClusterData) []model.DiagramResult 
 	return diagrams
 }
 
+// refreshTimeout bounds one refresh's cluster parsing. The per-request
+// k8s timeout already stops a single hung call; this stops a refresh made
+// of many slow ones from outliving its interval. Never below a minute, so
+// a short test interval does not starve a real cluster.
+func (s *Server) refreshTimeout() time.Duration {
+	d := s.cfg.RefreshInterval
+	if d < time.Minute {
+		d = time.Minute
+	}
+	if d > 10*time.Minute {
+		d = 10 * time.Minute
+	}
+	return d
+}
+
+// refresh re-parses every cluster, regenerates the diagrams and publishes
+// them as a new generation. Background work (snapshot, EAM sync, upstream
+// checks) is started with ctx, not with the parse deadline.
 func (s *Server) refresh(ctx context.Context) {
 	slog.Info("refreshing cluster data")
 	start := time.Now()
+	parseCtx, cancelParse := context.WithTimeout(ctx, s.refreshTimeout())
+	defer cancelParse()
 
 	// All Kubernetes clusters get the same parsing treatment.
 	// The first parser remains the primary cluster for UI semantics.
@@ -368,7 +407,10 @@ func (s *Server) refresh(ctx context.Context) {
 		partial = true
 	} else {
 		var err error
-		clusterData, err = s.k8sParsers[0].ParseAll(ctx)
+		clusterData, err = s.k8sParsers[0].ParseAll(parseCtx)
+		if clusterData == nil {
+			clusterData = &model.ClusterData{}
+		}
 		if err != nil {
 			slog.Warn("partial parse", "error", err)
 			partial = true
@@ -382,11 +424,14 @@ func (s *Server) refresh(ctx context.Context) {
 		if i == 0 {
 			continue
 		}
-		secondary, err := p.ParseAll(ctx)
+		secondary, err := p.ParseAll(parseCtx)
 		if err != nil {
 			slog.Warn("partial parse", "error", err)
 			partial = true
 			partialClusters[p.ClusterName()] = true
+		}
+		if secondary == nil {
+			continue
 		}
 		clusterData.Nodes = append(clusterData.Nodes, secondary.Nodes...)
 		clusterData.Flux = append(clusterData.Flux, secondary.Flux...)
@@ -461,10 +506,12 @@ func (s *Server) refresh(ctx context.Context) {
 	diagrams := s.generate(clusterData)
 
 	s.mu.Lock()
+	s.gen++
 	s.data = diagrams
 	s.lastGen = time.Now()
 	s.clusterData = clusterData
 	s.lastPartial = partial
+	s.partialClusters = partialClusters
 	s.mu.Unlock()
 
 	slog.Info("refresh complete", "duration", time.Since(start), "partial", partial)
@@ -487,69 +534,90 @@ func (s *Server) refresh(ctx context.Context) {
 		}()
 	}
 
-	// Check latest versions asynchronously — updates arrive on next page load
+	s.startChecks(clusterData)
+}
+
+// startChecks runs the slow upstream lookups (chart and image registries,
+// node OS feeds, OSV.dev) in the background. Updates arrive on a later page
+// load. Each check is single-flight: while one is still running — a slow
+// upstream — the next refresh does not start another, so they cannot pile
+// up; the running one's result is rendered against whatever generation is
+// current when it finishes.
+func (s *Server) startChecks(cd *model.ClusterData) {
+	s.runCheck(&s.chartsCheck, "charts", func() {
+		s.checker.Check(cd.HelmRepositories, cd.HelmReleases)
+	}, "charts", func(cur *model.ClusterData) model.DiagramResult {
+		return diagram.GenerateVersions(cur, s.checker)
+	})
+
+	s.runCheck(&s.imagesCheck, "images", func() {
+		s.imageChecker.Check(cd.Pods)
+		// Pin findings need the registry digests the check just refreshed,
+		// and describe the cluster as it is now, not as it was at launch.
+		s.mu.RLock()
+		cur, partial := s.clusterData, s.partialClusters
+		s.mu.RUnlock()
+		cvmetrics.EmitImagePinMetrics(cur.Pods, s.imageChecker.GetDigest, partial)
+	}, "images", func(cur *model.ClusterData) model.DiagramResult {
+		return diagram.GenerateImages(cur, s.imageChecker)
+	})
+
+	renderNodes := func(cur *model.ClusterData) model.DiagramResult {
+		return diagram.GenerateNodes(cur, s.nodeChecker, s.securityChecker)
+	}
+	s.runCheck(&s.nodesCheck, "nodes", func() {
+		s.nodeChecker.Check(cd.Nodes)
+	}, "nodes", renderNodes)
+	s.runCheck(&s.securityCheck, "node-security", func() {
+		s.securityChecker.Check(versions.NodeSecurityQueries(cd.Nodes))
+	}, "nodes", renderNodes)
+}
+
+// runCheck starts check in the background unless the previous run guarded
+// by flag is still going, then re-renders diagram id through updateDiagram.
+func (s *Server) runCheck(flag *atomic.Bool, name string, check func(), id string, render func(*model.ClusterData) model.DiagramResult) {
+	if !flag.CompareAndSwap(false, true) {
+		slog.Debug("upstream check still running, not starting another", "check", name)
+		return
+	}
 	go func() {
-		s.checker.Check(clusterData.HelmRepositories, clusterData.HelmReleases)
-
-		// Regenerate versions diagram with updated latest versions
-		versionsResult := diagram.GenerateVersions(clusterData, s.checker)
-		s.mu.Lock()
-		for i, d := range s.data {
-			if d.ID == "charts" {
-				s.data[i] = versionsResult
-				break
-			}
-		}
-		s.mu.Unlock()
+		defer flag.Store(false)
+		check()
+		s.updateDiagram(id, render)
 	}()
+}
 
-	// Check latest image tags asynchronously
-	go func() {
-		s.imageChecker.Check(clusterData.Pods)
-		// Pin findings need the registry digests the check just refreshed.
-		cvmetrics.EmitImagePinMetrics(clusterData.Pods, s.imageChecker.GetDigest, partialClusters)
+// updateDiagram re-renders one diagram from the current generation and
+// swaps it in — as a new slice, never in place (see Server). If another
+// refresh publishes while render runs, the result belongs to an older
+// generation and is dropped: the newer refresh rendered that diagram from
+// newer data with the same checker state.
+func (s *Server) updateDiagram(id string, render func(*model.ClusterData) model.DiagramResult) bool {
+	s.mu.RLock()
+	gen, cur := s.gen, s.clusterData
+	s.mu.RUnlock()
+	if cur == nil {
+		return false
+	}
 
-		imagesResult := diagram.GenerateImages(clusterData, s.imageChecker)
-		s.mu.Lock()
-		for i, d := range s.data {
-			if d.ID == "images" {
-				s.data[i] = imagesResult
-				break
-			}
+	result := render(cur)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.gen != gen {
+		return false
+	}
+	for i, d := range s.data {
+		if d.ID != id {
+			continue
 		}
-		s.mu.Unlock()
-	}()
-
-	// Check latest node OS/kubelet versions asynchronously
-	go func() {
-		s.nodeChecker.Check(clusterData.Nodes)
-
-		nodesResult := diagram.GenerateNodes(clusterData, s.nodeChecker, s.securityChecker)
-		s.mu.Lock()
-		for i, d := range s.data {
-			if d.ID == "nodes" {
-				s.data[i] = nodesResult
-				break
-			}
-		}
-		s.mu.Unlock()
-	}()
-
-	// Check node security vulnerabilities via OSV.dev asynchronously
-	go func() {
-		queries := versions.NodeSecurityQueries(clusterData.Nodes)
-		s.securityChecker.Check(queries)
-
-		nodesResult := diagram.GenerateNodes(clusterData, s.nodeChecker, s.securityChecker)
-		s.mu.Lock()
-		for i, d := range s.data {
-			if d.ID == "nodes" {
-				s.data[i] = nodesResult
-				break
-			}
-		}
-		s.mu.Unlock()
-	}()
+		next := make([]model.DiagramResult, len(s.data))
+		copy(next, s.data)
+		next[i] = result
+		s.data = next
+		return true
+	}
+	return false
 }
 
 // resolveDataSource fetches and parses a single data source.
@@ -599,9 +667,9 @@ func fetchSourceData(ds model.DataSource) ([]byte, error) {
 }
 
 func (s *Server) handleDiagrams(w http.ResponseWriter, r *http.Request) {
+	// Copy-on-write: the slice taken here is never modified afterwards, so
+	// it can be encoded without holding the lock.
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	resp := struct {
 		Diagrams    []model.DiagramResult `json:"diagrams"`
 		GeneratedAt time.Time             `json:"generated_at"`
@@ -609,6 +677,7 @@ func (s *Server) handleDiagrams(w http.ResponseWriter, r *http.Request) {
 		Diagrams:    s.data,
 		GeneratedAt: s.lastGen,
 	}
+	s.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
