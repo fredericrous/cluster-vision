@@ -38,3 +38,34 @@ func TestGenerateImagesJoinsTrivyReports(t *testing.T) {
 		}
 	}
 }
+
+// A pod pinned to tag@digest and one pulling the bare tag are two rows,
+// each with its own pin status, whatever order the pods come in.
+func TestGenerateImagesSplitsPinnedFromUnpinned(t *testing.T) {
+	const d = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	pinned := model.PodImageInfo{Cluster: "c", Namespace: "a", PodName: "p1", Image: "ghcr.io/x/api:1.2.3@" + d}
+	unpinned := model.PodImageInfo{Cluster: "c", Namespace: "b", PodName: "p2", Image: "ghcr.io/x/api:1.2.3"}
+
+	var first string
+	for _, pods := range [][]model.PodImageInfo{{pinned, unpinned}, {unpinned, pinned}} {
+		res := GenerateImages(&model.ClusterData{Pods: pods}, nil)
+		var rows []ImageRow
+		if err := json.Unmarshal([]byte(res.Content), &rows); err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != 2 {
+			t.Fatalf("rows = %d, want 2: %+v", len(rows), rows)
+		}
+		for _, r := range rows {
+			wantPinned := r.Namespaces == "a"
+			if r.Pinned != wantPinned || (r.Digest == d) != wantPinned {
+				t.Errorf("row %+v: pinned = %v, want %v", r, r.Pinned, wantPinned)
+			}
+		}
+		if first == "" {
+			first = res.Content
+		} else if res.Content != first {
+			t.Errorf("output depends on pod order")
+		}
+	}
+}

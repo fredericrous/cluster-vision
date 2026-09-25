@@ -17,7 +17,7 @@ var tableSpecs = map[string]tableSpec{
 	"configs":           {Keys: []string{"cluster", "namespace", "kind", "name"}, Label: []string{"kind", "namespace", "name"}},
 	"crds":              {Keys: []string{"cluster", "name"}, Label: []string{"name"}},
 	"helm-workloads":    {Keys: []string{"cluster", "namespace", "release", "kind", "workload"}, Label: []string{"release", "kind", "workload"}},
-	"images":            {Keys: []string{"image", "tag", "type"}, Label: []string{"image", "tag"}, Advisory: append([]string{"latest", "outdated", "exploitRisk", "exploitSummary", "kevCVEs"}, vulnAdvisory...)},
+	"images":            {Keys: []string{"image", "tag", "digest", "type"}, Label: []string{"image", "tag"}, Advisory: append([]string{"latest", "outdated", "exploitRisk", "exploitSummary", "kevCVEs"}, vulnAdvisory...)},
 	"labels":            {Keys: []string{"key"}},
 	"namespace-summary": {Keys: []string{"cluster", "namespace"}, Label: []string{"namespace"}},
 	"network-policies":  {Keys: []string{"cluster", "namespace", "name"}, Label: []string{"namespace", "name"}},
