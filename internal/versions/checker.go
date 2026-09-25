@@ -415,7 +415,10 @@ func highestStableSemver(versions []string) string {
 	}
 
 	sort.Slice(semvers, func(i, j int) bool {
-		return semvers[j].less(semvers[i]) // descending
+		if c := semvers[i].compare(semvers[j]); c != 0 {
+			return c > 0 // descending
+		}
+		return semvers[i].original > semvers[j].original // same precedence, e.g. +build
 	})
 
 	return semvers[0].original
@@ -423,16 +426,23 @@ func highestStableSemver(versions []string) string {
 
 type semver struct {
 	major, minor, patch int
-	pre                 string
+	pre                 string // pre-release with its leading "-", e.g. "-rc.1"
+	build               string // build metadata with its leading "+", e.g. "+k3s1"
 	original            string
 }
 
+// parseSemver parses "[v]MAJOR.MINOR[.PATCH][-PRE][+BUILD]". Build
+// metadata is kept apart from the pre-release: "1.31.4+k3s1" is a release,
+// not a pre-release of 1.31.4.
 func parseSemver(s string) (semver, bool) {
 	v := semver{original: s}
 	s = strings.TrimPrefix(s, "v")
 
-	// Split off pre-release
-	if idx := strings.IndexAny(s, "-+"); idx >= 0 {
+	if idx := strings.IndexByte(s, '+'); idx >= 0 {
+		v.build = s[idx:]
+		s = s[:idx]
+	}
+	if idx := strings.IndexByte(s, '-'); idx >= 0 {
 		v.pre = s[idx:]
 		s = s[:idx]
 	}
@@ -461,22 +471,82 @@ func parseSemver(s string) (semver, bool) {
 	return v, true
 }
 
+// less orders by semver precedence; build metadata does not take part.
 func (a semver) less(b semver) bool {
-	if a.major != b.major {
-		return a.major < b.major
+	return a.compare(b) < 0
+}
+
+func (a semver) compare(b semver) int {
+	for _, d := range [][2]int{{a.major, b.major}, {a.minor, b.minor}, {a.patch, b.patch}} {
+		if d[0] != d[1] {
+			if d[0] < d[1] {
+				return -1
+			}
+			return 1
+		}
 	}
-	if a.minor != b.minor {
-		return a.minor < b.minor
+	return comparePre(strings.TrimPrefix(a.pre, "-"), strings.TrimPrefix(b.pre, "-"))
+}
+
+// comparePre compares pre-release strings by semver rules: none outranks
+// any; otherwise dot-separated identifiers left to right, numeric ones
+// numerically and below alphanumeric ones, a shorter list first on a tie.
+func comparePre(a, b string) int {
+	switch {
+	case a == b:
+		return 0
+	case a == "":
+		return 1
+	case b == "":
+		return -1
 	}
-	if a.patch != b.patch {
-		return a.patch < b.patch
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		x, y := as[i], bs[i]
+		if x == y {
+			continue
+		}
+		xn, xErr := strconv.Atoi(x)
+		yn, yErr := strconv.Atoi(y)
+		switch {
+		case xErr == nil && yErr == nil:
+			if xn < yn {
+				return -1
+			}
+			return 1
+		case xErr == nil:
+			return -1
+		case yErr == nil:
+			return 1
+		case x < y:
+			return -1
+		default:
+			return 1
+		}
 	}
-	// Pre-release versions have lower precedence than release
-	if a.pre != "" && b.pre == "" {
-		return true
+	switch {
+	case len(as) < len(bs):
+		return -1
+	case len(as) > len(bs):
+		return 1
 	}
-	if a.pre == "" && b.pre != "" {
+	return 0
+}
+
+// Outdated reports whether latest is a newer version than current. Both
+// are compared as semantic versions, so a "v" prefix and build metadata
+// ("v1.31.4+k3s1" against "v1.31.4") do not count as a difference, and a
+// deployed pre-release newer than the latest stable is not outdated. When
+// either side is not a semantic version the two are compared as strings,
+// "v" prefix aside.
+func Outdated(current, latest string) bool {
+	if current == "" || latest == "" {
 		return false
 	}
-	return a.pre < b.pre
+	c, cok := parseSemver(current)
+	l, lok := parseSemver(latest)
+	if cok && lok {
+		return c.less(l)
+	}
+	return strings.TrimPrefix(current, "v") != strings.TrimPrefix(latest, "v")
 }

@@ -79,11 +79,7 @@ func GenerateNodes(data *model.ClusterData, checker *versions.NodeChecker, secCh
 		if checker != nil {
 			if v := checker.GetLatestOS(n.OSImage); v != "" {
 				latestOS = v
-				cleanLatest := strings.TrimPrefix(latestOS, "v")
-				cleanCurrent := strings.TrimPrefix(osVer, "v")
-				if cleanLatest != "" && cleanCurrent != "" && cleanLatest != cleanCurrent {
-					osOutdated = true
-				}
+				osOutdated = versions.Outdated(osVer, latestOS)
 			}
 		}
 
@@ -92,9 +88,9 @@ func GenerateNodes(data *model.ClusterData, checker *versions.NodeChecker, secCh
 		if checker != nil {
 			if v := checker.GetLatestKubelet(n.KubeletVersion); v != "" {
 				latestKubelet = v
-				if latestKubelet != n.KubeletVersion {
-					kubeletOutdated = true
-				}
+				// Semver, not string, comparison: a distro's build
+				// metadata (v1.31.4+k3s1) is the same release as v1.31.4.
+				kubeletOutdated = versions.Outdated(n.KubeletVersion, latestKubelet)
 			}
 		}
 

@@ -48,7 +48,9 @@ func TestParseSemver(t *testing.T) {
 		{"1.2.3", true, 1, 2, 3, ""},
 		{"v1.2.3", true, 1, 2, 3, ""},
 		{"1.2.3-rc1", true, 1, 2, 3, "-rc1"},
-		{"1.2.3+build", true, 1, 2, 3, "+build"},
+		{"1.2.3+build", true, 1, 2, 3, ""},
+		{"v1.31.4+k3s1", true, 1, 31, 4, ""},
+		{"1.2.3-rc.1+build.5", true, 1, 2, 3, "-rc.1"},
 		{"1.2", true, 1, 2, 0, ""},
 		{"latest", false, 0, 0, 0, ""},
 		{"1", false, 0, 0, 0, ""},
@@ -190,6 +192,12 @@ func TestSemverLess(t *testing.T) {
 		{"1.0.0-rc1", "1.0.0", true},  // pre-release < release
 		{"1.0.0", "1.0.0-rc1", false}, // release > pre-release
 		{"1.0.0", "1.0.0", false},     // equal
+		{"1.0.0-alpha", "1.0.0-alpha.1", true},
+		{"1.0.0-alpha.1", "1.0.0-alpha.beta", true},
+		{"1.0.0-beta.2", "1.0.0-beta.11", true},
+		{"1.0.0-rc.1", "1.0.0-beta.11", false},
+		{"1.0.0+build.2", "1.0.0+build.1", false}, // build metadata ignored
+		{"1.0.0+k3s1", "1.0.0", false},
 	}
 
 	for _, tt := range tests {
@@ -224,5 +232,29 @@ func TestChartChecksKeyRepositoriesByCluster(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("checks = %+v, want %+v", got, want)
+	}
+}
+
+func TestOutdated(t *testing.T) {
+	cases := []struct {
+		current, latest string
+		want            bool
+	}{
+		{"v1.31.4+k3s1", "v1.31.4", false},
+		{"v1.31.4+k3s1", "v1.31.5", true},
+		{"v1.2.3", "1.2.3", false},
+		{"1.2.3", "v1.2.4", true},
+		{"2.0.0-rc.1", "1.9.0", false}, // deployed pre-release ahead of stable
+		{"2.0.0-rc.1", "2.0.0", true},
+		{"1.2.3", "1.2.3", false},
+		{"1.3.0", "1.2.9", false}, // ahead of the index
+		{"", "1.0.0", false},
+		{"2024.01", "2024.01", false},
+		{"weird", "other", true},
+	}
+	for _, c := range cases {
+		if got := Outdated(c.current, c.latest); got != c.want {
+			t.Errorf("Outdated(%q, %q) = %v, want %v", c.current, c.latest, got, c.want)
+		}
 	}
 }
