@@ -2,6 +2,7 @@ package parser
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -9,12 +10,14 @@ import (
 	"github.com/fredericrous/cluster-vision/internal/model"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 // Node roles come from a label map; they must not follow map order.
@@ -71,5 +74,47 @@ func TestParseVulnReportsIsSorted(t *testing.T) {
 		if !slices.IsSortedFunc(got, func(a, b model.ImageVuln) int { return strings.Compare(a.Image, b.Image) }) {
 			t.Fatalf("reports not sorted by image")
 		}
+	}
+}
+
+var (
+	securityPolicyGVR = schema.GroupVersionResource{Group: "gateway.envoyproxy.io", Version: "v1alpha1", Resource: "securitypolicies"}
+	ctpGVR            = schema.GroupVersionResource{Group: "gateway.envoyproxy.io", Version: "v1alpha1", Resource: "clienttrafficpolicies"}
+)
+
+// A failed policy list (timeout, 403) must mark the parse partial like
+// every other list does; otherwise the snapshot records every policy as
+// removed. A cluster without Envoy Gateway's CRDs is not a failure.
+func TestPolicyListFailuresMarkParsePartial(t *testing.T) {
+	cases := []struct {
+		name        string
+		err         error
+		wantPartial bool
+	}{
+		{"forbidden", apierrors.NewForbidden(securityPolicyGVR.GroupResource(), "", errors.New("rbac")), true},
+		{"timeout", apierrors.NewTimeoutError("slow", 1), true},
+		{"crd not installed", apierrors.NewNotFound(securityPolicyGVR.GroupResource(), ""), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, parse := range []func(*KubernetesParser) int{
+				func(p *KubernetesParser) int { return len(p.parseSecurityPolicies(context.Background())) },
+				func(p *KubernetesParser) int { return len(p.parseClientTrafficPolicies(context.Background())) },
+			} {
+				dyn := dynfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
+					securityPolicyGVR: "SecurityPolicyList", ctpGVR: "ClientTrafficPolicyList",
+				})
+				dyn.PrependReactor("list", "*", func(k8stesting.Action) (bool, runtime.Object, error) {
+					return true, nil, tc.err
+				})
+				p := &KubernetesParser{dynamic: dyn, clusterName: "c"}
+				if n := parse(p); n != 0 {
+					t.Fatalf("got %d policies from a failed list", n)
+				}
+				if partial := p.failed.Load() > 0; partial != tc.wantPartial {
+					t.Fatalf("partial = %v, want %v", partial, tc.wantPartial)
+				}
+			}
+		})
 	}
 }

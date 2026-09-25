@@ -534,7 +534,7 @@ func (p *KubernetesParser) parseSecurityPolicies(ctx context.Context) []model.Se
 
 	list, err := p.dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Debug("no envoy gateway security policies found", "error", err)
+		p.listFailed("envoy gateway securitypolicies", err)
 		return nil
 	}
 
@@ -561,7 +561,7 @@ func (p *KubernetesParser) parseClientTrafficPolicies(ctx context.Context) []mod
 
 	list, err := p.dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Debug("no client traffic policies found", "error", err)
+		p.listFailed("envoy gateway clienttrafficpolicies", err)
 		return nil
 	}
 
