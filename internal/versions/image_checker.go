@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -46,12 +47,20 @@ func NewImageChecker() *ImageChecker {
 }
 
 // variant represents a tag's decomposed structure: prefix + semver + suffix.
+// The suffix keeps its letters and punctuation but not its numbers, which
+// are carried separately: "1.2.3-debian-12-r4" and "1.2.4-debian-12-r0" are
+// the same variant ("-debian-#-r#"), as are "16.4-alpine3.20" and
+// "16.4-alpine3.21" ("-alpine#.#").
 type variant struct {
-	prefix string
-	suffix string
+	prefix     string
+	suffix     string // numbers replaced by "#"
+	suffixNums []int  // the numbers, in order, to rank equal semvers
 }
 
-var semverInTagRe = regexp.MustCompile(`^(.*?)(\d+\.\d+(?:\.\d+)?)(.*?)$`)
+var (
+	semverInTagRe = regexp.MustCompile(`^(.*?)(\d+\.\d+(?:\.\d+)?)(.*?)$`)
+	digitsRe      = regexp.MustCompile(`\d+`)
+)
 
 // extractVariant splits a tag into its variant pattern and semver portion.
 // Returns the variant and the parsed semver. ok=false if the tag has no semver.
@@ -60,7 +69,14 @@ func extractVariant(tag string) (v variant, sv semver, ok bool) {
 	if m == nil {
 		return variant{}, semver{}, false
 	}
-	v = variant{prefix: m[1], suffix: m[3]}
+	v = variant{prefix: m[1], suffix: digitsRe.ReplaceAllString(m[3], "#")}
+	for _, d := range digitsRe.FindAllString(m[3], -1) {
+		n, err := strconv.Atoi(d)
+		if err != nil {
+			return variant{}, semver{}, false // absurdly long digit run
+		}
+		v.suffixNums = append(v.suffixNums, n)
+	}
 	sv, ok = parseSemver(m[2])
 	return v, sv, ok
 }
@@ -68,6 +84,21 @@ func extractVariant(tag string) (v variant, sv semver, ok bool) {
 // variantKey returns a string key that identifies a variant pattern.
 func (v variant) key() string {
 	return v.prefix + "|" + v.suffix
+}
+
+// newerTag orders two tags of one variant: by semver, then by the numbers
+// in the suffix (a rebuild "-r5" after "-r4", a base image "alpine3.21"
+// after "alpine3.20").
+func newerTag(sv semver, v variant, thanSV semver, than variant) bool {
+	if c := sv.compare(thanSV); c != 0 {
+		return c > 0
+	}
+	for i := 0; i < len(v.suffixNums) && i < len(than.suffixNums); i++ {
+		if v.suffixNums[i] != than.suffixNums[i] {
+			return v.suffixNums[i] > than.suffixNums[i]
+		}
+	}
+	return false
 }
 
 // skipRegistry returns true for registries we can't reach from inside the cluster
@@ -311,6 +342,9 @@ func (ic *ImageChecker) GetLatest(image, tag string) string {
 
 // highestMatchingTag finds the tag with the highest semver that matches
 // the same variant pattern (prefix + suffix) as the deployed tag.
+//
+// Pre-releases need no filter of their own: "1.2.4-rc.1" is a different
+// variant ("-rc.#") from a deployed "1.2.3", so it never matches one.
 func highestMatchingTag(deployedTag string, allTags []string) string {
 	deployedVariant, deployedSV, ok := extractVariant(deployedTag)
 	if !ok {
@@ -319,6 +353,7 @@ func highestMatchingTag(deployedTag string, allTags []string) string {
 
 	bestTag := deployedTag
 	bestSV := deployedSV
+	bestVariant := deployedVariant
 
 	for _, t := range allTags {
 		v, sv, ok := extractVariant(t)
@@ -328,18 +363,18 @@ func highestMatchingTag(deployedTag string, allTags []string) string {
 		if v.key() != deployedVariant.key() {
 			continue
 		}
-		// Skip pre-release versions
-		if sv.pre != "" {
-			continue
-		}
-		if bestSV.less(sv) {
-			bestSV = sv
-			bestTag = t
+		if newerTag(sv, v, bestSV, bestVariant) {
+			bestSV, bestVariant, bestTag = sv, v, t
 		}
 	}
 
 	return bestTag
 }
+
+// maxTagPages bounds how many Link-header pages a tag listing follows. At
+// n=1000 per page that is far past any real repository; a registry that
+// keeps answering with a next link (or links back to itself) stops here.
+const maxTagPages = 50
 
 // listTags fetches the tag list for an image from an OCI registry.
 func (ic *ImageChecker) listTags(registry, imagePath string) ([]string, error) {
@@ -352,7 +387,11 @@ func (ic *ImageChecker) listTags(registry, imagePath string) ([]string, error) {
 	var allTags []string
 	tagURL := fmt.Sprintf("https://%s/v2/%s/tags/list?n=1000", host, imagePath)
 
-	for tagURL != "" {
+	for page := 0; tagURL != ""; page++ {
+		if page == maxTagPages {
+			slog.Warn("image check: tag list truncated", "image", host+"/"+imagePath, "pages", maxTagPages)
+			break
+		}
 		body, nextURL, err := ic.fetchWithAuth(tagURL, host)
 		if err != nil {
 			return nil, err

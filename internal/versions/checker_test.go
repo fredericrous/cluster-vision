@@ -1,7 +1,10 @@
 package versions
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -256,5 +259,26 @@ func TestOutdated(t *testing.T) {
 		if got := Outdated(c.current, c.latest); got != c.want {
 			t.Errorf("Outdated(%q, %q) = %v, want %v", c.current, c.latest, got, c.want)
 		}
+	}
+}
+
+// Chart tag listings are capped like image ones.
+func TestCheckOCICapsPagination(t *testing.T) {
+	var requests int
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Link", `</v2/charts/app/tags/list?n=1000&last=x>; rel="next"`)
+		_, _ = w.Write([]byte(`{"tags":["1.0.0","1.1.0"]}`))
+	}))
+	defer srv.Close()
+
+	c := NewChecker(time.Minute, "")
+	c.client = srv.Client()
+	got, err := c.checkOCI("oci://"+strings.TrimPrefix(srv.URL, "https://")+"/charts", "app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != maxTagPages || got != "1.1.0" {
+		t.Fatalf("requests = %d, latest = %q; want %d pages and 1.1.0", requests, got, maxTagPages)
 	}
 }

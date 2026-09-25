@@ -21,7 +21,6 @@ import (
 type Checker struct {
 	mu            sync.RWMutex
 	latest        map[string]string // "repoURL/chartName" → latest version
-	tokenCache    map[string]string // host → bearer token (for paginated requests)
 	interval      time.Duration
 	registryProxy string // e.g. "192.168.1.43:5000" — if set, OCI URLs through this host are resolved to upstream
 	client        *http.Client
@@ -170,7 +169,11 @@ func (c *Checker) checkOCI(repoURL, chartName string) (string, error) {
 	var allTags []string
 	url := fmt.Sprintf("https://%s/v2/%s/tags/list?n=1000", host, imagePath)
 
-	for url != "" {
+	for page := 0; url != ""; page++ {
+		if page == maxTagPages {
+			slog.Warn("version check: tag list truncated", "chart", host+"/"+imagePath, "pages", maxTagPages)
+			break
+		}
 		body, nextURL, err := c.fetchWithAuthPaginated(url)
 		if err != nil {
 			return "", err
@@ -211,14 +214,6 @@ func (c *Checker) fetchWithAuthPaginated(url string) (body []byte, nextURL strin
 			return nil, "", fmt.Errorf("getting auth token: %w", err)
 		}
 
-		// Cache token for subsequent paginated requests
-		c.mu.Lock()
-		if c.tokenCache == nil {
-			c.tokenCache = make(map[string]string)
-		}
-		c.tokenCache[extractHost(url)] = token
-		c.mu.Unlock()
-
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			return nil, "", err
@@ -247,7 +242,7 @@ func (c *Checker) fetchWithAuthPaginated(url string) (body []byte, nextURL strin
 	return b, parseLinkNext(resp.Header.Get("Link"), url), err
 }
 
-// extractHost returns the scheme+host portion of a URL for token cache keying.
+// extractHost returns the scheme+host portion of a URL.
 func extractHost(rawURL string) string {
 	if idx := strings.Index(rawURL, "//"); idx >= 0 {
 		rest := rawURL[idx+2:]
