@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/fredericrous/cluster-vision/internal/model"
@@ -58,24 +59,16 @@ func (s *Syncer) Sync(ctx context.Context, data *model.ClusterData) *SyncResult 
 			result.AppsUpdated++
 		}
 
-		// Upsert K8s source
-		existingSource, _ := s.db.FindK8sSource(ctx, app.ID, da.Cluster, da.Namespace, da.HelmRelease)
-		if existingSource == nil && da.LegacyNamespace != "" {
-			// Recorded under the HelmRelease object's namespace before;
-			// reuse that row so the upsert moves it instead of leaving a
-			// stale duplicate behind.
-			existingSource, _ = s.db.FindK8sSource(ctx, app.ID, da.Cluster, da.LegacyNamespace, da.HelmRelease)
-		}
-		src := BuildK8sSource(*app, da)
-		if existingSource != nil {
-			if existingSource.ManualOverride {
-				continue
-			}
-			src.ID = existingSource.ID
-		}
-		if err := s.db.UpsertK8sSource(ctx, src); err != nil {
-			slog.Error("failed to upsert k8s source", "app", da.Name, "error", err)
+		// Upsert K8s source. A failed lookup is not "no row": inserting
+		// anyway would add a duplicate next to the row the lookup missed.
+		manual, err := s.syncK8sSource(ctx, app, da)
+		if err != nil {
+			slog.Error("failed to sync k8s source", "app", da.Name, "error", err)
 			result.Errors = append(result.Errors, err.Error())
+		}
+		if manual {
+			// A hand-maintained source: leave its history alone too.
+			continue
 		}
 
 		// Record version history
@@ -108,4 +101,34 @@ func (s *Syncer) Sync(ctx context.Context, data *model.ClusterData) *SyncResult 
 		"errors", len(result.Errors))
 
 	return result
+}
+
+// syncK8sSource records where an application runs. It never writes when the
+// lookup of the existing row failed, and leaves manual overrides alone
+// (reported through manual=true).
+func (s *Syncer) syncK8sSource(ctx context.Context, app *store.Application, da DiscoveredApp) (manual bool, err error) {
+	existing, err := s.db.FindK8sSource(ctx, app.ID, da.Cluster, da.Namespace, da.HelmRelease)
+	if err != nil {
+		return false, fmt.Errorf("k8s source for %s: %w", da.Name, err)
+	}
+	if existing == nil && da.LegacyNamespace != "" {
+		// Recorded under the HelmRelease object's namespace before;
+		// reuse that row so the upsert moves it instead of leaving a
+		// stale duplicate behind.
+		existing, err = s.db.FindK8sSource(ctx, app.ID, da.Cluster, da.LegacyNamespace, da.HelmRelease)
+		if err != nil {
+			return false, fmt.Errorf("k8s source for %s (legacy namespace): %w", da.Name, err)
+		}
+	}
+	src := BuildK8sSource(*app, da)
+	if existing != nil {
+		if existing.ManualOverride {
+			return true, nil
+		}
+		src.ID = existing.ID
+	}
+	if err := s.db.UpsertK8sSource(ctx, src); err != nil {
+		return false, fmt.Errorf("k8s source for %s: %w", da.Name, err)
+	}
+	return false, nil
 }

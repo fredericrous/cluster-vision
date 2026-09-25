@@ -2,10 +2,12 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 type AppDependency struct {
@@ -169,6 +171,8 @@ func (db *DB) UpsertK8sSource(ctx context.Context, s *K8sSource) error {
 }
 
 // FindK8sSource looks up existing k8s_source by app_id + cluster + namespace + helm_release.
+// It returns (nil, nil) only when no row matches; any other failure is an
+// error, and the caller must not treat it as permission to insert.
 func (db *DB) FindK8sSource(ctx context.Context, appID uuid.UUID, cluster, namespace string, helmRelease *string) (*K8sSource, error) {
 	query := `SELECT id, app_id, cluster, namespace, helm_release, workload_name, workload_kind,
 		chart_name, chart_version, images, last_sync_at, manual_override
@@ -186,8 +190,15 @@ func (db *DB) FindK8sSource(ctx context.Context, appID uuid.UUID, cluster, names
 	err := db.Pool.QueryRow(ctx, query, args...).Scan(&s.ID, &s.AppID, &s.Cluster, &s.Namespace,
 		&s.HelmRelease, &s.WorkloadName, &s.WorkloadKind,
 		&s.ChartName, &s.ChartVersion, &s.Images, &s.LastSyncAt, &s.ManualOverride)
-	if err != nil {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil // not found
+	}
+	if err != nil {
+		// Anything else (connection lost, timeout, scan mismatch) is NOT
+		// "not found": reporting it as such made the caller insert a fresh
+		// row next to the existing one, which is how k8s_sources collected
+		// duplicates.
+		return nil, fmt.Errorf("finding k8s source: %w", err)
 	}
 	return &s, nil
 }
