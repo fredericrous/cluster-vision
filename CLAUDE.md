@@ -159,12 +159,22 @@ PR did not cause.
 The dev server expects the Go API at `http://localhost:8080` (override with
 `API_URL`).
 
-## Known pre-existing issue
+## Vite config notes (`web/vite.config.ts`)
 
-`@jalez/react-flow-smart-edge` is CJS-shaped but published as `"type":
-"module"`, so it throws `ReferenceError: module is not defined` during SSR of
-`app/components/flow-diagram.tsx`. The component is lazy-loaded, so flow routes
-still render and hydrate on the client; the error is logged server-side only.
+- **No `react()` from `@vitejs/plugin-react`.** `reactRouter()` injects React
+  Refresh itself; adding `react()` injected it twice and every dev page threw
+  `Identifier 'RefreshRuntime' has already been declared`. Only
+  `reactCompilerPreset` is imported from that package, for the babel plugin.
+- **`ssr.noExternal` for `@jalez/react-flow-smart-edge` and `pathfinding`.**
+  The first is published as `"type": "module"` with a CommonJS `main`, so
+  Node's loader threw `module is not defined` and every flow route answered
+  500 before falling back to client rendering. Bundled, Vite uses its ESM
+  `module` build; that build imports named exports from CommonJS
+  `pathfinding`, so it is bundled (and pre-bundled in dev) too.
+- **`optimizeDeps.include`** lists dependencies Vite would otherwise discover
+  only when a page first imports them; each late discovery reloads the page
+  and fails the in-flight request with `504 Outdated Optimize Dep`. Add a
+  dependency there when the dev log prints `new dependencies optimized`.
 
 <!-- amont:start -->
 
