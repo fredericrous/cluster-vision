@@ -145,7 +145,7 @@ func (db *DB) UpsertK8sSource(ctx context.Context, s *K8sSource) error {
 		chart_name, chart_version, images, last_sync_at, manual_override)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 		ON CONFLICT (id) DO UPDATE SET
-		helm_release=EXCLUDED.helm_release, workload_name=EXCLUDED.workload_name, workload_kind=EXCLUDED.workload_kind,
+		namespace=EXCLUDED.namespace, helm_release=EXCLUDED.helm_release, workload_name=EXCLUDED.workload_name, workload_kind=EXCLUDED.workload_kind,
 		chart_name=EXCLUDED.chart_name, chart_version=EXCLUDED.chart_version, images=EXCLUDED.images,
 		last_sync_at=EXCLUDED.last_sync_at`,
 		s.ID, s.AppID, s.Cluster, s.Namespace, s.HelmRelease, s.WorkloadName, s.WorkloadKind,

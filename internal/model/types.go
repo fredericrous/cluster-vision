@@ -33,7 +33,8 @@ type ClusterData struct {
 
 // ImageVuln represents vulnerability counts for a container image from trivy-operator.
 type ImageVuln struct {
-	Image    string // "registry/repo:tag"
+	Image    string // ImageKey of the scanned artifact
+	Digest   string // "sha256:<hex>" of the scanned artifact, when trivy gives one
 	Cluster  string
 	Critical int
 	High     int
@@ -73,13 +74,69 @@ type PodImageInfo struct {
 // HelmReleaseInfo represents a Flux HelmRelease resource.
 type HelmReleaseInfo struct {
 	Name       string
-	Namespace  string
+	Namespace  string // namespace of the HelmRelease object itself
 	Cluster    string
 	ChartName  string
 	Version    string // deployed chart version
 	RepoName   string // sourceRef name
 	RepoNS     string // sourceRef namespace
 	AppVersion string // from status, if available
+
+	// TargetNamespace is where the chart's resources are installed
+	// (spec.targetNamespace); empty means Namespace. A HelmRelease kept in
+	// flux-system commonly installs into another namespace.
+	TargetNamespace string
+	// ReleaseName is the Helm release name: status.history[0].name, else
+	// spec.releaseName, else Flux's default "[<targetNamespace>-]<name>".
+	// Charts stamp it into app.kubernetes.io/instance.
+	ReleaseName string
+}
+
+// DeployNamespace is the namespace the release's resources live in.
+func (hr HelmReleaseInfo) DeployNamespace() string {
+	if hr.TargetNamespace != "" {
+		return hr.TargetNamespace
+	}
+	return hr.Namespace
+}
+
+// Owns reports whether w was installed by this release. helm-controller
+// labels everything it applies with helm.toolkit.fluxcd.io/{name,namespace},
+// naming the HelmRelease object; that label decides when present. Otherwise
+// the chart's app.kubernetes.io/instance label must equal the release name,
+// in the namespace the release deploys to.
+func (hr HelmReleaseInfo) Owns(w WorkloadInfo) bool {
+	if w.Cluster != hr.Cluster {
+		return false
+	}
+	if name, ok := w.Labels["helm.toolkit.fluxcd.io/name"]; ok {
+		return name == hr.Name && w.Labels["helm.toolkit.fluxcd.io/namespace"] == hr.Namespace
+	}
+	release := hr.ReleaseName
+	if release == "" {
+		release = hr.Name
+	}
+	return w.Namespace == hr.DeployNamespace() && w.Labels["app.kubernetes.io/instance"] == release
+}
+
+// Images returns the distinct images of the workloads hr owns, in workload
+// order: this release's own, not its neighbours' in the namespace, and not
+// those of a same-named namespace in another cluster.
+func (hr HelmReleaseInfo) Images(workloads []WorkloadInfo) []string {
+	seen := make(map[string]bool)
+	var images []string
+	for _, w := range workloads {
+		if !hr.Owns(w) {
+			continue
+		}
+		for _, img := range w.Images {
+			if !seen[img] {
+				seen[img] = true
+				images = append(images, img)
+			}
+		}
+	}
+	return images
 }
 
 // HelmRepositoryInfo represents a Flux HelmRepository source.

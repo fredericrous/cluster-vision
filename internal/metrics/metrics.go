@@ -105,17 +105,13 @@ func EmitImageVulnMetrics(pods []model.PodImageInfo, vulns []model.ImageVuln) {
 		return
 	}
 
-	type vKey struct{ cluster, image string }
-	vulnByCI := make(map[vKey]*model.ImageVuln, len(vulns))
-	for i := range vulns {
-		vulnByCI[vKey{cluster: vulns[i].Cluster, image: vulns[i].Image}] = &vulns[i]
-	}
+	idx := model.NewVulnIndex(vulns)
 
 	type triple struct{ cluster, namespace, image string }
 	seen := make(map[triple]struct{}, len(pods))
 
 	for _, p := range pods {
-		v, ok := vulnByCI[vKey{cluster: p.Cluster, image: p.Image}]
+		v, ok := idx.Lookup(p.Cluster, p.Image)
 		if !ok {
 			continue
 		}

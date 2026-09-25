@@ -11,13 +11,13 @@ import (
 
 // VersionRow represents a single row in the versions table.
 type VersionRow struct {
-	Cluster   string `json:"cluster"`
-	Release   string `json:"release"`
-	Namespace string `json:"namespace"`
-	Chart     string `json:"chart"`
-	Version   string `json:"version"`
-	Latest    string `json:"latest"`
-	Outdated  bool   `json:"outdated"`
+	Cluster      string `json:"cluster"`
+	Release      string `json:"release"`
+	Namespace    string `json:"namespace"`
+	Chart        string `json:"chart"`
+	Version      string `json:"version"`
+	Latest       string `json:"latest"`
+	Outdated     bool   `json:"outdated"`
 	RepoType     string `json:"repoType"`
 	RepoURL      string `json:"repoUrl"`
 	SecurityRisk string `json:"securityRisk"` // "critical" | "warning" | "none" | ""
@@ -41,28 +41,7 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 		repoByKey[r.Cluster+"/"+r.Namespace+"/"+r.Name] = r
 	}
 
-	// Build vulnerability lookup: imageRef → ImageVuln
-	vulnByImage := make(map[string]model.ImageVuln)
-	for _, v := range data.ImageVulns {
-		vulnByImage[v.Image] = v
-	}
-
-	// Build release → images mapping via workload labels
-	// key: "cluster/namespace/releaseName" → set of image refs
-	releaseImages := make(map[string]map[string]bool)
-	for _, w := range data.Workloads {
-		relName := w.Labels["app.kubernetes.io/instance"]
-		if relName == "" {
-			continue
-		}
-		key := w.Cluster + "/" + w.Namespace + "/" + relName
-		if releaseImages[key] == nil {
-			releaseImages[key] = make(map[string]bool)
-		}
-		for _, img := range w.Images {
-			releaseImages[key][img] = true
-		}
-	}
+	vulns := model.NewVulnIndex(data.ImageVulns)
 
 	// Sort releases by cluster, namespace, then name
 	sorted := make([]model.HelmReleaseInfo, len(data.HelmReleases))
@@ -114,12 +93,11 @@ func GenerateVersions(data *model.ClusterData, checker *versions.Checker) model.
 		// Aggregate security risk across all images in this release's workloads
 		secRisk := ""
 		vulnSum := ""
-		relKey := rel.Cluster + "/" + rel.Namespace + "/" + rel.Name
-		if images, ok := releaseImages[relKey]; ok {
+		if images := rel.Images(data.Workloads); len(images) > 0 {
 			worstRisk := ""
 			var summaryParts []string
-			for img := range images {
-				if v, ok := vulnByImage[img]; ok {
+			for _, img := range images {
+				if v, ok := vulns.Lookup(rel.Cluster, img); ok {
 					r, s := vulnRisk(v)
 					if worstRisk == "" || vulnRiskPriority(r) > vulnRiskPriority(worstRisk) {
 						worstRisk = r

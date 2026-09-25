@@ -10,16 +10,16 @@ import (
 
 // HelmWorkloadRow represents a Helm release with its managed workloads.
 type HelmWorkloadRow struct {
-	Release    string `json:"release"`
-	Namespace  string `json:"namespace"`
-	Cluster    string `json:"cluster"`
-	Workload   string `json:"workload"`
-	Kind       string `json:"kind"`
-	Replicas   string `json:"replicas"`
+	Release   string `json:"release"`
+	Namespace string `json:"namespace"`
+	Cluster   string `json:"cluster"`
+	Workload  string `json:"workload"`
+	Kind      string `json:"kind"`
+	Replicas  string `json:"replicas"`
 }
 
-// GenerateHelmWorkloads correlates HelmReleases with Workloads via the
-// app.kubernetes.io/instance label.
+// GenerateHelmWorkloads correlates HelmReleases with the Workloads they
+// installed (HelmReleaseInfo.Owns).
 func GenerateHelmWorkloads(data *model.ClusterData) model.DiagramResult {
 	if len(data.HelmReleases) == 0 || len(data.Workloads) == 0 {
 		return model.DiagramResult{
@@ -30,25 +30,14 @@ func GenerateHelmWorkloads(data *model.ClusterData) model.DiagramResult {
 		}
 	}
 
-	// Index workloads by cluster/namespace and app.kubernetes.io/instance label
-	type nsKey struct{ cluster, namespace string }
-	workloadsByInstance := make(map[nsKey]map[string][]model.WorkloadInfo)
-	for _, w := range data.Workloads {
-		instance := w.Labels["app.kubernetes.io/instance"]
-		if instance == "" {
-			continue
-		}
-		key := nsKey{w.Cluster, w.Namespace}
-		if workloadsByInstance[key] == nil {
-			workloadsByInstance[key] = make(map[string][]model.WorkloadInfo)
-		}
-		workloadsByInstance[key][instance] = append(workloadsByInstance[key][instance], w)
-	}
-
 	var rows []HelmWorkloadRow
 	for _, hr := range data.HelmReleases {
-		key := nsKey{hr.Cluster, hr.Namespace}
-		workloads := workloadsByInstance[key][hr.Name]
+		var workloads []model.WorkloadInfo
+		for _, w := range data.Workloads {
+			if hr.Owns(w) {
+				workloads = append(workloads, w)
+			}
+		}
 
 		if len(workloads) == 0 {
 			rows = append(rows, HelmWorkloadRow{
@@ -101,4 +90,3 @@ func GenerateHelmWorkloads(data *model.ClusterData) model.DiagramResult {
 		Content: string(tableJSON),
 	}
 }
-
