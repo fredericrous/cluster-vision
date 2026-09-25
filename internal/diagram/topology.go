@@ -2,6 +2,7 @@ package diagram
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"golang.org/x/text/cases"
@@ -187,10 +188,15 @@ func generateK8sOnlyTopology(data *model.ClusterData) model.DiagramResult {
 			label := fmt.Sprintf("%s<br/>%s<br/>CPU: %s / Mem: %s<br/>%s",
 				node.Name, role, node.CPU, node.Memory, node.IP)
 
-			for k, v := range node.Labels {
+			var gpuKeys []string
+			for k := range node.Labels {
 				if strings.Contains(strings.ToLower(k), "gpu") {
-					label += fmt.Sprintf("<br/>GPU: %s", v)
+					gpuKeys = append(gpuKeys, k)
 				}
+			}
+			sort.Strings(gpuKeys)
+			for _, k := range gpuKeys {
+				label += fmt.Sprintf("<br/>GPU: %s", node.Labels[k])
 			}
 
 			fmt.Fprintf(&b, "    %s[\"%s\"]\n", id, label)
@@ -267,10 +273,17 @@ func generateMeshTopology(data *model.ClusterData) *model.DiagramResult {
 		b.WriteString("  end\n")
 	}
 
-	// Remote cluster subgraphs
-	remoteIdx := 0
+	// Remote cluster subgraphs, in network-name order so the remoteN IDs
+	// and the tunnel edges come out the same on every refresh.
+	networks := make([]string, 0, len(remoteNetworks))
+	for network := range remoteNetworks {
+		networks = append(networks, network)
+	}
+	sort.Strings(networks)
+
 	remoteGwIDs := make(map[string]string) // network → mermaid ID
-	for network, ip := range remoteNetworks {
+	for remoteIdx, network := range networks {
+		ip := remoteNetworks[network]
 		remoteName := networkName(network)
 		subID := fmt.Sprintf("remote%d", remoteIdx)
 		gwID := fmt.Sprintf("ewgw_r%d", remoteIdx)
@@ -280,13 +293,12 @@ func generateMeshTopology(data *model.ClusterData) *model.DiagramResult {
 		label := fmt.Sprintf("East-West Gateway<br/>%s:15443", ip)
 		fmt.Fprintf(&b, "    %s[\"%s\"]\n", gwID, label)
 		b.WriteString("  end\n")
-		remoteIdx++
 	}
 
 	// mTLS tunnel links between local and remote gateways
 	if hasLocalGW {
-		for _, remoteGwID := range remoteGwIDs {
-			fmt.Fprintf(&b, "  ewgw_l0 <-->|\"mTLS tunnel<br/>port 15443\"| %s\n", remoteGwID)
+		for _, network := range networks {
+			fmt.Fprintf(&b, "  ewgw_l0 <-->|\"mTLS tunnel<br/>port 15443\"| %s\n", remoteGwIDs[network])
 		}
 	}
 

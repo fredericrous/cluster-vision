@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/fredericrous/cluster-vision/internal/model"
@@ -105,8 +106,16 @@ func mapStandaloneWorkloads(data *model.ClusterData, helmApps []DiscoveredApp) [
 		g.images = append(g.images, w.Images...)
 	}
 
+	// Group keys in order: map order would shuffle the apps on every sync.
+	groupKeys := make([]string, 0, len(groups))
+	for k := range groups {
+		groupKeys = append(groupKeys, k)
+	}
+	sort.Strings(groupKeys)
+
 	var apps []DiscoveredApp
-	for _, g := range groups {
+	for _, k := range groupKeys {
+		g := groups[k]
 		wlName := g.name
 		wlKind := g.kind
 		apps = append(apps, DiscoveredApp{

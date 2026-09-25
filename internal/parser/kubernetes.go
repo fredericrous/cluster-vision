@@ -258,6 +258,7 @@ func (p *KubernetesParser) parseNodes(ctx context.Context) []model.NodeInfo {
 				roles = append(roles, strings.TrimPrefix(label, "node-role.kubernetes.io/"))
 			}
 		}
+		sort.Strings(roles) // map order would reshuffle them on every refresh
 
 		cpu := n.Status.Capacity.Cpu().String()
 		memBytes := n.Status.Capacity.Memory().Value()
@@ -1612,6 +1613,9 @@ func (p *KubernetesParser) parseVulnReports(ctx context.Context) []model.ImageVu
 	for _, v := range merged {
 		result = append(result, *v)
 	}
+	// Map order would otherwise reach the snapshot model and every consumer
+	// that keeps the first report it sees.
+	sort.Slice(result, func(i, j int) bool { return result[i].Image < result[j].Image })
 	return result
 }
 

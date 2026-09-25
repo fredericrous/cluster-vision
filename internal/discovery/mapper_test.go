@@ -348,3 +348,20 @@ func TestBuildK8sSource(t *testing.T) {
 		t.Errorf("Images = %v, want [grafana/grafana:10.0.0]", src.Images)
 	}
 }
+
+// Standalone apps are grouped through a map; they must come out in a stable
+// order.
+func TestMapStandaloneWorkloadsIsSorted(t *testing.T) {
+	data := &model.ClusterData{}
+	for _, n := range []string{"zeta", "alpha", "mu", "beta", "omega", "kappa", "gamma", "delta", "epsilon"} {
+		data.Workloads = append(data.Workloads, model.WorkloadInfo{Name: n, Namespace: "default", Cluster: "homelab", Kind: "Deployment"})
+	}
+	for i := 0; i < 10; i++ {
+		apps := mapStandaloneWorkloads(data, nil)
+		for j := 1; j < len(apps); j++ {
+			if apps[j-1].Name > apps[j].Name {
+				t.Fatalf("apps not sorted: %s before %s", apps[j-1].Name, apps[j].Name)
+			}
+		}
+	}
+}

@@ -15,13 +15,13 @@ type dockerComposeFile struct {
 }
 
 type dockerServiceDef struct {
-	Image         string            `yaml:"image"`
-	ContainerName string            `yaml:"container_name"`
-	Hostname      string            `yaml:"hostname"`
-	Command       interface{}       `yaml:"command"` // string or []string
-	Privileged    bool              `yaml:"privileged"`
-	Ports         []string          `yaml:"ports"`
-	Volumes       []string          `yaml:"volumes"`
+	Image         string                         `yaml:"image"`
+	ContainerName string                         `yaml:"container_name"`
+	Hostname      string                         `yaml:"hostname"`
+	Command       interface{}                    `yaml:"command"` // string or []string
+	Privileged    bool                           `yaml:"privileged"`
+	Ports         []string                       `yaml:"ports"`
+	Volumes       []string                       `yaml:"volumes"`
 	Networks      map[string]dockerNetworkConfig `yaml:"networks"`
 }
 
@@ -76,14 +76,18 @@ func ParseDockerCompose(data []byte) (*model.DockerCompose, error) {
 			svc.Command = fmt.Sprintf("%v", parts)
 		}
 
-		// Networks with static IPs
-		for netName, netCfg := range def.Networks {
+		// Networks with static IPs. Walk them in name order: with several
+		// static addresses the first network's wins, not a random one's.
+		for netName := range def.Networks {
 			svc.Networks = append(svc.Networks, netName)
-			if netCfg.IPv4Address != "" {
-				svc.IP = netCfg.IPv4Address
-			}
 		}
 		sort.Strings(svc.Networks)
+		for _, netName := range svc.Networks {
+			if ip := def.Networks[netName].IPv4Address; ip != "" {
+				svc.IP = ip
+				break
+			}
+		}
 
 		services = append(services, svc)
 	}
