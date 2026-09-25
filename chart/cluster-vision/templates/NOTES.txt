@@ -2,12 +2,12 @@ Cluster Vision {{ .Chart.AppVersion }} is installed as {{ include "cluster-visio
 
 Reach the UI with:
 
-  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "cluster-vision.fullname" . }} 3000:3000
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "cluster-vision.fullname" . }} 3000:{{ .Values.service.port }}
 
 then open http://localhost:3000
 
-  UI  : port 3000
-  API : port 8080
+  UI  : port {{ .Values.web.port }} (Service port {{ .Values.service.port }})
+  API : port {{ .Values.api.port }}
 {{ if not .Values.rbac.readSecrets }}
 The Secrets inventory is off (rbac.readSecrets=false): the Configs view lists
 ConfigMaps only. Set rbac.readSecrets=true to grant cluster-wide read access to

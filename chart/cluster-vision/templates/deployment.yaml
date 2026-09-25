@@ -15,23 +15,28 @@ spec:
       labels:
         {{- include "cluster-vision.selectorLabels" . | nindent 8 }}
     spec:
-      serviceAccountName: {{ include "cluster-vision.serviceAccountName" . }}
+      serviceAccountName: {{ include "cluster-vision.serviceAccountName" . | quote }}
       containers:
         - name: {{ .Chart.Name }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: {{ printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion | toString) | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # The Go API is configured by flags (cmd/main.go), which the image
+          # entrypoint hands to it; the web server reads PORT and API_URL.
+          args:
+            - {{ printf "-port=%d" (int .Values.api.port) | quote }}
+            - {{ printf "-refresh=%s" (toString .Values.refresh) | quote }}
           env:
-            - name: API_PORT
-              value: "{{ .Values.api.port }}"
-            - name: REFRESH_INTERVAL
-              value: "{{ .Values.refresh }}"
+            - name: PORT
+              value: {{ .Values.web.port | toString | quote }}
+            - name: API_URL
+              value: {{ printf "http://localhost:%d" (int .Values.api.port) | quote }}
             {{- if .Values.clusterName }}
             - name: CLUSTER_NAME
-              value: "{{ .Values.clusterName }}"
+              value: {{ .Values.clusterName | toString | quote }}
             {{- end }}
             {{- if .Values.registryProxy }}
             - name: REGISTRY_PROXY
-              value: "{{ .Values.registryProxy }}"
+              value: {{ .Values.registryProxy | toString | quote }}
             {{- end }}
             {{- if .Values.dataSources }}
             - name: DATA_SOURCES
@@ -87,9 +92,9 @@ spec:
         {{- range $i, $ds := .Values.dataSources }}
         - name: source-{{ $i }}
           secret:
-            secretName: {{ $ds.secret.name }}
+            secretName: {{ $ds.secret.name | quote }}
             items:
-              - key: {{ $ds.secret.key }}
+              - key: {{ $ds.secret.key | quote }}
                 path: data
         {{- end }}
       {{- end }}

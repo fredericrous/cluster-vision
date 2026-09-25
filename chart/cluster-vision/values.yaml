@@ -2,13 +2,18 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/fredericrous/cluster-vision
-  tag: ""  # defaults to appVersion
+  # Defaults to appVersion. The chart passes the API settings as flags to the
+  # image's entrypoint, so pin a tag no older than the chart's appVersion.
+  tag: ""
   pullPolicy: IfNotPresent
 
 api:
+  # Port the Go API listens on (passed as -port). Probes, the Service's api
+  # port and the web server's API_URL all follow it.
   port: 8080
 
 web:
+  # Port the SSR web server listens on (passed as PORT).
   port: 3000
 
 service:
@@ -52,6 +57,7 @@ dataSources: []
 # upstream registry URLs instead of querying the proxy (which only has cached tags).
 registryProxy: ""
 
+# How often the API re-reads the cluster (passed as -refresh; a Go duration).
 refresh: 5m
 
 # Optional: inject env vars from a Secret (e.g. DATABASE_URL, LITELLM_URL for EAM features)
