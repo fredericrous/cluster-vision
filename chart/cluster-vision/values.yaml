@@ -17,10 +17,17 @@ service:
 
 serviceAccount:
   create: true
+  # With create: false, name an existing ServiceAccount: the ClusterRole is
+  # bound to it, and the chart refuses to bind the namespace's `default` one.
   name: ""
 
 rbac:
   create: true
+  # Grant get/list/watch on Secrets cluster-wide. Only the Secrets inventory
+  # (name, namespace and key count in the Configs view) uses it; values are
+  # never read out, and dataSources are mounted as volumes, not read through
+  # the API. Off by default: the view then lists ConfigMaps only.
+  readSecrets: false
 
 # Name of the local cluster (shown in security table). Defaults to "Homelab" in code.
 clusterName: ""

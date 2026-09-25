@@ -1336,11 +1336,17 @@ func (p *KubernetesParser) parseConfigs(ctx context.Context) []model.ConfigInfo 
 		}
 	}
 
-	// Secrets — only metadata, never expose data
+	// Secrets — only metadata, never expose data. Reading Secrets is opt-in
+	// (the chart grants it only with rbac.readSecrets=true), so Forbidden
+	// means the Secrets inventory is switched off, not that the parse is
+	// partial: it must not block snapshots.
 	secrets, err := p.typed.CoreV1().Secrets("").List(ctx, metav1.ListOptions{})
-	if err != nil {
+	switch {
+	case apierrors.IsForbidden(err):
+		slog.Debug("secret listing not permitted; secrets inventory disabled", "cluster", p.clusterName)
+	case err != nil:
 		p.listFailed("secrets", err)
-	} else {
+	default:
 		for _, s := range secrets.Items {
 			result = append(result, model.ConfigInfo{
 				Name:      s.Name,

@@ -1,4 +1,7 @@
 {{- if .Values.rbac.create -}}
+{{- if and (not .Values.serviceAccount.create) (not .Values.serviceAccount.name) }}
+{{- fail "serviceAccount.create=false needs serviceAccount.name: without it the cluster-wide read access would be bound to the namespace's `default` ServiceAccount. Name an existing ServiceAccount, or set rbac.create=false and grant access yourself." }}
+{{- end }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -11,6 +14,6 @@ roleRef:
   name: {{ include "cluster-vision.fullname" . }}
 subjects:
   - kind: ServiceAccount
-    name: {{ include "cluster-vision.serviceAccountName" . }}
-    namespace: {{ .Release.Namespace }}
+    name: {{ include "cluster-vision.serviceAccountName" . | quote }}
+    namespace: {{ .Release.Namespace | quote }}
 {{- end }}
