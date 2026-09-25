@@ -49,6 +49,10 @@ COPY --from=web-builder /app/node_modules/ /app/node_modules/
 
 EXPOSE 3000 8080
 
+# The base image's unprivileged user (uid/gid 1000). Neither server writes
+# outside /tmp, so the image also runs with a read-only root filesystem.
+USER node
+
 # tini -g delivers SIGTERM to the whole process group, so both servers shut
 # down gracefully; the entrypoint stops the pair when either one dies.
 # Arguments are flags for the Go API, e.g. `-port=8080 -refresh=5m`.

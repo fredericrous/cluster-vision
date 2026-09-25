@@ -16,10 +16,18 @@ spec:
         {{- include "cluster-vision.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "cluster-vision.serviceAccountName" . | quote }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           image: {{ printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion | toString) | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           # The Go API is configured by flags (cmd/main.go), which the image
           # entrypoint hands to it; the web server reads PORT and API_URL.
           args:
@@ -79,16 +87,20 @@ spec:
             failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if .Values.dataSources }}
           volumeMounts:
+            # Writable scratch space for a read-only root filesystem (the
+            # entrypoint's FIFO, Node's and Go's temp files).
+            - name: tmp
+              mountPath: /tmp
             {{- range $i, $ds := .Values.dataSources }}
             - name: source-{{ $i }}
               mountPath: /data/source-{{ $i }}
               readOnly: true
             {{- end }}
-          {{- end }}
-      {{- if .Values.dataSources }}
       volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
         {{- range $i, $ds := .Values.dataSources }}
         - name: source-{{ $i }}
           secret:
@@ -97,4 +109,3 @@ spec:
               - key: {{ $ds.secret.key | quote }}
                 path: data
         {{- end }}
-      {{- end }}
