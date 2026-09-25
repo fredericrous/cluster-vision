@@ -40,25 +40,27 @@ func NewChecker(interval time.Duration, registryProxy string) *Checker {
 	}
 }
 
-// Check fetches latest versions for all unique repo+chart combinations.
-func (c *Checker) Check(repos []model.HelmRepositoryInfo, releases []model.HelmReleaseInfo) {
-	// Build repo lookup: "namespace/name" → HelmRepositoryInfo
+// chartRef is one repository+chart pair to look up.
+type chartRef struct {
+	repoURL   string
+	repoType  string
+	chartName string
+}
+
+// chartChecks lists the unique repository+chart pairs the releases use.
+// A release's sourceRef names a HelmRepository in its own cluster, so the
+// lookup is keyed cluster/namespace/name: two clusters may each have a
+// flux-system/charts repository pointing at different URLs.
+func chartChecks(repos []model.HelmRepositoryInfo, releases []model.HelmReleaseInfo) []chartRef {
 	repoByKey := make(map[string]model.HelmRepositoryInfo)
 	for _, r := range repos {
-		repoByKey[r.Namespace+"/"+r.Name] = r
+		repoByKey[r.Cluster+"/"+r.Namespace+"/"+r.Name] = r
 	}
 
-	// Collect unique chart+repo pairs
-	type chartRef struct {
-		repoURL   string
-		repoType  string
-		chartName string
-	}
 	seen := make(map[string]bool)
 	var checks []chartRef
-
 	for _, rel := range releases {
-		repo, ok := repoByKey[rel.RepoNS+"/"+rel.RepoName]
+		repo, ok := repoByKey[rel.Cluster+"/"+rel.RepoNS+"/"+rel.RepoName]
 		if !ok {
 			continue
 		}
@@ -74,6 +76,12 @@ func (c *Checker) Check(repos []model.HelmRepositoryInfo, releases []model.HelmR
 			chartName: rel.ChartName,
 		})
 	}
+	return checks
+}
+
+// Check fetches latest versions for all unique repo+chart combinations.
+func (c *Checker) Check(repos []model.HelmRepositoryInfo, releases []model.HelmReleaseInfo) {
+	checks := chartChecks(repos, releases)
 
 	results := make(map[string]string)
 

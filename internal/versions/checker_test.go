@@ -1,8 +1,11 @@
 package versions
 
 import (
+	"slices"
 	"testing"
 	"time"
+
+	"github.com/fredericrous/cluster-vision/internal/model"
 )
 
 func TestHighestStableSemver(t *testing.T) {
@@ -71,11 +74,11 @@ func TestParseSemver(t *testing.T) {
 
 func TestResolveUpstream(t *testing.T) {
 	tests := []struct {
-		name      string
-		proxy     string
-		repoURL   string
-		wantHost  string
-		wantPath  string
+		name     string
+		proxy    string
+		repoURL  string
+		wantHost string
+		wantPath string
 	}{
 		{
 			"ghcr through proxy",
@@ -198,5 +201,28 @@ func TestSemverLess(t *testing.T) {
 				t.Errorf("(%q).less(%q) = %v, want %v", tt.a, tt.b, got, tt.want)
 			}
 		})
+	}
+}
+
+// Two clusters may each have a HelmRepository with the same
+// namespace/name pointing at different URLs; each release must be checked
+// against its own cluster's.
+func TestChartChecksKeyRepositoriesByCluster(t *testing.T) {
+	repos := []model.HelmRepositoryInfo{
+		{Name: "charts", Namespace: "flux-system", Cluster: "home", Type: "default", URL: "https://home.example/charts"},
+		{Name: "charts", Namespace: "flux-system", Cluster: "nas", Type: "oci", URL: "oci://nas.example/charts"},
+	}
+	releases := []model.HelmReleaseInfo{
+		{Name: "app", Cluster: "home", ChartName: "app", RepoName: "charts", RepoNS: "flux-system"},
+		{Name: "app", Cluster: "nas", ChartName: "app", RepoName: "charts", RepoNS: "flux-system"},
+		{Name: "orphan", Cluster: "cloud", ChartName: "app", RepoName: "charts", RepoNS: "flux-system"},
+	}
+	got := chartChecks(repos, releases)
+	want := []chartRef{
+		{repoURL: "https://home.example/charts", repoType: "default", chartName: "app"},
+		{repoURL: "oci://nas.example/charts", repoType: "oci", chartName: "app"},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("checks = %+v, want %+v", got, want)
 	}
 }
