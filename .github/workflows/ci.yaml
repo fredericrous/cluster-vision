@@ -22,6 +22,7 @@ jobs:
       pull-requests: read
     outputs:
       migrations: ${{ steps.filter.outputs.migrations }}
+      mcp: ${{ steps.filter.outputs.mcp }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v4
@@ -31,6 +32,12 @@ jobs:
             migrations:
               - 'internal/store/migrations/**'
               - 'internal/store/db.go'
+            # internal/diagram: mcp/server.test.ts checks the MCP diagram
+            # enum against the IDs the Go generators emit.
+            mcp:
+              - 'mcp/**'
+              - 'internal/diagram/**'
+              - '.github/workflows/ci.yaml'
 
   go:
     name: Go Build & Test
@@ -114,8 +121,48 @@ jobs:
         if: ${{ !contains(fromJSON(steps.attest.outputs.gates), 'pre-push-run-tests-js') }}
         run: npm run typecheck
 
+      - name: Test
+        if: ${{ !contains(fromJSON(steps.attest.outputs.gates), 'pre-push-run-tests-js') }}
+        run: npm run test:run
+
       - name: Build
         run: npm run build
+
+  # The stdio MCP server in mcp/. Path-filtered on pull requests only, and
+  # fail-open: it runs whenever the filter did not succeed, and on every
+  # push/workflow_call. A skipped job reports as passed.
+  mcp:
+    name: MCP Build & Test
+    needs: changes
+    if: ${{ always() && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.mcp == 'true') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mcp/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
 
   # Pull-based migration check (2026-09-22). The cluster does the work: this
   # job publishes the artifact and hands the check over. It builds the PR
