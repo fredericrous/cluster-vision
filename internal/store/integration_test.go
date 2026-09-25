@@ -87,3 +87,33 @@ func TestInsertSnapshotRejectsUnchangedHashUnderLock(t *testing.T) {
 		t.Fatalf("second insert of the same hash = %v, want ErrSnapshotUnchanged", err)
 	}
 }
+
+func TestReplaceAIDependenciesPrunesOnlyInferred(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	src, keep, stale, legacy := testApp(t, db), testApp(t, db), testApp(t, db), testApp(t, db)
+
+	// A dependency recorded before origin was tracked (origin NULL).
+	if _, err := db.Pool.Exec(ctx, `INSERT INTO app_dependencies (source_app_id, target_app_id) VALUES ($1, $2)`, src.ID, legacy.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ReplaceAIDependencies(ctx, src.ID, []AppDependency{{TargetAppID: keep.ID}, {TargetAppID: stale.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	// Re-enrichment no longer infers `stale`, and proposes a self-loop.
+	if err := db.ReplaceAIDependencies(ctx, src.ID, []AppDependency{{TargetAppID: keep.ID}, {TargetAppID: src.ID}}); err != nil {
+		t.Fatal(err)
+	}
+
+	deps, err := db.ListDependencies(ctx, src.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[uuid.UUID]bool{}
+	for _, d := range deps {
+		got[d.TargetAppID] = true
+	}
+	if !got[keep.ID] || !got[legacy.ID] || got[stale.ID] || got[src.ID] || len(got) != 2 {
+		t.Fatalf("want {keep, legacy}, got %v", got)
+	}
+}

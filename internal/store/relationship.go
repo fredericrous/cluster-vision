@@ -55,13 +55,43 @@ func (db *DB) ListDependencies(ctx context.Context, appID uuid.UUID) ([]AppDepen
 	return deps, nil
 }
 
-func (db *DB) AddDependency(ctx context.Context, d *AppDependency) error {
-	_, err := db.Pool.Exec(ctx, `INSERT INTO app_dependencies (source_app_id, target_app_id, description)
-		VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, d.SourceAppID, d.TargetAppID, d.Description)
-	if err != nil {
-		return fmt.Errorf("adding dependency: %w", err)
+// ReplaceAIDependencies makes the ai-inferred dependencies of one source
+// application exactly `deps`, in one transaction: ai-inferred edges from the
+// source that are not in deps are deleted, the rest are upserted. Edges with
+// any other origin — recorded by a person, or before origin was tracked —
+// are never deleted or rewritten. Self-loops in deps are ignored.
+func (db *DB) ReplaceAIDependencies(ctx context.Context, sourceID uuid.UUID, deps []AppDependency) error {
+	targets := make([]uuid.UUID, 0, len(deps))
+	for _, d := range deps {
+		if d.TargetAppID != sourceID {
+			targets = append(targets, d.TargetAppID)
+		}
 	}
-	return nil
+
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("replacing ai dependencies: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `DELETE FROM app_dependencies
+		WHERE source_app_id = $1 AND origin = 'ai-inferred' AND NOT (target_app_id = ANY($2))`,
+		sourceID, targets); err != nil {
+		return fmt.Errorf("pruning ai dependencies: %w", err)
+	}
+	for _, d := range deps {
+		if d.TargetAppID == sourceID {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO app_dependencies (source_app_id, target_app_id, description, origin)
+			VALUES ($1, $2, $3, 'ai-inferred')
+			ON CONFLICT (source_app_id, target_app_id) DO UPDATE SET description = EXCLUDED.description
+			WHERE app_dependencies.origin = 'ai-inferred'`,
+			sourceID, d.TargetAppID, d.Description); err != nil {
+			return fmt.Errorf("adding ai dependency: %w", err)
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // App-Component links
