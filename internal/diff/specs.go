@@ -21,7 +21,7 @@ var tableSpecs = map[string]tableSpec{
 	"labels":            {Keys: []string{"key"}},
 	"namespace-summary": {Keys: []string{"cluster", "namespace"}, Label: []string{"namespace"}},
 	"network-policies":  {Keys: []string{"cluster", "namespace", "name"}, Label: []string{"namespace", "name"}},
-	"nodes":             {Keys: []string{"cluster", "type", "name"}, Label: []string{"name"}, Advisory: append([]string{"latestOS", "osOutdated", "latestKubelet", "kubeletOutdated"}, vulnAdvisory...)},
+	"nodes":             {Keys: []string{"cluster", "type", "namespace", "name"}, Label: []string{"namespace", "name"}, Advisory: append([]string{"latestOS", "osOutdated", "latestKubelet", "kubeletOutdated"}, vulnAdvisory...)},
 	"quotas":            {Keys: []string{"cluster", "namespace", "kind", "name"}, Label: []string{"kind", "namespace", "name"}},
 	"rbac":              {Keys: []string{"cluster", "namespace", "subjectKind", "subject", "roleKind", "role"}, Label: []string{"subject", "role"}},
 	"security":          {Keys: []string{"cluster", "namespace"}, Label: []string{"namespace"}},
