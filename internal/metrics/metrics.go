@@ -3,6 +3,9 @@
 package metrics
 
 import (
+	"strings"
+	"sync"
+
 	"github.com/fredericrous/cluster-vision/internal/model"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -11,8 +14,8 @@ import (
 var (
 	// ImageKEVCount: number of CVEs in this image listed on the CISA KEV
 	// catalog. Per-(cluster, namespace, image) so alerts can target the
-	// specific workload location. Reset between refreshes so a fixed image
-	// disappears from the metric.
+	// specific workload location. Stale series are deleted between refreshes
+	// so a fixed image disappears from the metric.
 	ImageKEVCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "cluster_vision_image_kev_count",
 		Help: "Number of CVEs in the image listed on CISA KEV (Known Exploited Vulnerabilities).",
@@ -28,7 +31,8 @@ var (
 	// Image pin findings, per (cluster, namespace, image) like the vuln
 	// gauges so the same alert → playbook plumbing applies. Consumed by the
 	// ImageUnpinned / ImageTagMoved / ImageTagDrifted rules and, through
-	// them, sre-agent's image_digest_pin playbook. Reset between refreshes.
+	// them, sre-agent's image_digest_pin playbook. Stale series are deleted
+	// between refreshes.
 	//
 	// ImageUnpinned: the pod spec pulls by tag only (no @sha256). Whatever
 	// the tag points at tomorrow is what the next pull gets.
@@ -95,34 +99,27 @@ var (
 // `pods` provides the namespace dimension that ImageVuln deliberately
 // drops; PodImageInfo carries Cluster (stamped at parse time), so the
 // join across multi-cluster data stays attributable.
-func EmitImageVulnMetrics(pods []model.PodImageInfo, vulns []model.ImageVuln) {
-	// Reset to drop labels from previous refreshes (otherwise a fixed
-	// image would keep its stale gauge series forever).
-	ImageKEVCount.Reset()
-	ImageMaxEPSS.Reset()
-
-	if len(vulns) == 0 || len(pods) == 0 {
-		return
-	}
-
-	idx := model.NewVulnIndex(vulns)
-
-	type triple struct{ cluster, namespace, image string }
-	seen := make(map[triple]struct{}, len(pods))
-
-	for _, p := range pods {
-		v, ok := idx.Lookup(p.Cluster, p.Image)
-		if !ok {
-			continue
+//
+// Series that are no longer observed are deleted AFTER the new values are
+// set (never Reset-then-refill, which lets a scrape see an empty set and
+// resolves every alert for a moment). Clusters in `partial` — whose list
+// calls failed this refresh — keep their previous series: missing data is
+// not evidence that an image was fixed.
+func EmitImageVulnMetrics(pods []model.PodImageInfo, vulns []model.ImageVuln, partial map[string]bool) {
+	kev, epss := newBatch(), newBatch()
+	if len(vulns) > 0 && len(pods) > 0 {
+		idx := model.NewVulnIndex(vulns)
+		for _, p := range pods {
+			v, ok := idx.Lookup(p.Cluster, p.Image)
+			if !ok {
+				continue
+			}
+			kev.set(float64(v.KEVCount), p.Cluster, p.Namespace, p.Image)
+			epss.set(v.MaxEPSS, p.Cluster, p.Namespace, p.Image)
 		}
-		t := triple{cluster: p.Cluster, namespace: p.Namespace, image: p.Image}
-		if _, dup := seen[t]; dup {
-			continue
-		}
-		seen[t] = struct{}{}
-		ImageKEVCount.WithLabelValues(p.Cluster, p.Namespace, p.Image).Set(float64(v.KEVCount))
-		ImageMaxEPSS.WithLabelValues(p.Cluster, p.Namespace, p.Image).Set(v.MaxEPSS)
 	}
+	kevSeries.replace(kev, partial)
+	epssSeries.replace(epss, partial)
 }
 
 // DigestLookup answers "what does the registry serve for image:tag right
@@ -132,22 +129,12 @@ type DigestLookup func(image, tag string) (digest string, ok bool)
 // EmitImagePinMetrics emits the pin findings for every running image.
 // `image` is the pod spec reference as written (with its @sha256 when
 // pinned), so an alert's label is what the GitOps manifest contains — the
-// binding sre-agent's playbook hands to patch-agent. Reset between
-// refreshes so a pinned/repinned image drops off the gauges.
-func EmitImagePinMetrics(pods []model.PodImageInfo, lookup DigestLookup) {
-	ImageUnpinned.Reset()
-	ImageTagMoved.Reset()
-	ImageTagDrifted.Reset()
-
-	type triple struct{ cluster, namespace, image string }
-	seen := make(map[triple]struct{})
+// binding sre-agent's playbook hands to patch-agent. Stale series are
+// deleted after the new ones are set, except for clusters in `partial`
+// (see EmitImageVulnMetrics).
+func EmitImagePinMetrics(pods []model.PodImageInfo, lookup DigestLookup, partial map[string]bool) {
+	unpinned, moved, drifted := newBatch(), newBatch(), newBatch()
 	for _, p := range pods {
-		t := triple{cluster: p.Cluster, namespace: p.Namespace, image: p.Image}
-		if _, dup := seen[t]; dup {
-			continue
-		}
-		seen[t] = struct{}{}
-
 		registry, repo, tag, pinned := model.SplitImageRef(p.Image)
 		if tag == "" {
 			// Bare digest: pinned, and no tag for the registry to move.
@@ -158,15 +145,75 @@ func EmitImagePinMetrics(pods []model.PodImageInfo, lookup DigestLookup) {
 			upstream, _ = lookup(registry+"/"+repo, tag)
 		}
 		if pinned == "" {
-			ImageUnpinned.WithLabelValues(p.Cluster, p.Namespace, p.Image).Set(1)
+			unpinned.set(1, p.Cluster, p.Namespace, p.Image)
 			running := model.DigestOf(p.ImageID)
 			if upstream != "" && running != "" && running != upstream {
-				ImageTagDrifted.WithLabelValues(p.Cluster, p.Namespace, p.Image, running, upstream).Set(1)
+				drifted.set(1, p.Cluster, p.Namespace, p.Image, running, upstream)
 			}
 			continue
 		}
 		if upstream != "" && upstream != pinned {
-			ImageTagMoved.WithLabelValues(p.Cluster, p.Namespace, p.Image, pinned, upstream).Set(1)
+			moved.set(1, p.Cluster, p.Namespace, p.Image, pinned, upstream)
 		}
 	}
+	unpinnedSeries.replace(unpinned, partial)
+	movedSeries.replace(moved, partial)
+	driftedSeries.replace(drifted, partial)
+}
+
+// ---- stale-series tracking ----
+
+var (
+	kevSeries      = newSeries(ImageKEVCount)
+	epssSeries     = newSeries(ImageMaxEPSS)
+	unpinnedSeries = newSeries(ImageUnpinned)
+	movedSeries    = newSeries(ImageTagMoved)
+	driftedSeries  = newSeries(ImageTagDrifted)
+)
+
+// batch is one refresh's worth of values for a GaugeVec, keyed by the
+// joined label values. The first label of every vec here is "cluster".
+type batch map[string]sample
+
+type sample struct {
+	labels []string
+	value  float64
+}
+
+func newBatch() batch { return batch{} }
+
+func (b batch) set(v float64, labels ...string) {
+	b[strings.Join(labels, "\x00")] = sample{labels: labels, value: v}
+}
+
+// series remembers which label sets it published last time, so the next
+// publish can delete exactly the ones that disappeared.
+type series struct {
+	mu   sync.Mutex
+	vec  *prometheus.GaugeVec
+	last batch
+}
+
+func newSeries(vec *prometheus.GaugeVec) *series { return &series{vec: vec, last: batch{}} }
+
+// replace publishes next: every value is set first, then series absent from
+// next are deleted — unless their cluster is in keep, in which case they
+// are carried over untouched.
+func (s *series) replace(next batch, keep map[string]bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, smp := range next {
+		s.vec.WithLabelValues(smp.labels...).Set(smp.value)
+	}
+	for k, smp := range s.last {
+		if _, still := next[k]; still {
+			continue
+		}
+		if keep[smp.labels[0]] {
+			next[k] = smp
+			continue
+		}
+		s.vec.DeleteLabelValues(smp.labels...)
+	}
+	s.last = next
 }

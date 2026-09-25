@@ -359,6 +359,9 @@ func (s *Server) refresh(ctx context.Context) {
 	// state must not be persisted as a snapshot or it would record a
 	// mass delete followed by a mass add.
 	partial := false
+	// Clusters whose list calls failed: their metric series are kept
+	// rather than dropped for lack of data.
+	partialClusters := map[string]bool{}
 	clusterData := &model.ClusterData{}
 	if len(s.k8sParsers) == 0 {
 		// No cluster at all (see New): nothing to discover, nothing to persist.
@@ -369,6 +372,7 @@ func (s *Server) refresh(ctx context.Context) {
 		if err != nil {
 			slog.Warn("partial parse", "error", err)
 			partial = true
+			partialClusters[s.k8sParsers[0].ClusterName()] = true
 		}
 	}
 	clusterData.PrimaryCluster = s.cfg.ClusterName
@@ -382,6 +386,7 @@ func (s *Server) refresh(ctx context.Context) {
 		if err != nil {
 			slog.Warn("partial parse", "error", err)
 			partial = true
+			partialClusters[p.ClusterName()] = true
 		}
 		clusterData.Nodes = append(clusterData.Nodes, secondary.Nodes...)
 		clusterData.Flux = append(clusterData.Flux, secondary.Flux...)
@@ -449,8 +454,9 @@ func (s *Server) refresh(ctx context.Context) {
 	s.enrichImageVulns(clusterData.ImageVulns)
 
 	// Emit Prometheus metrics keyed on (cluster, namespace, image) by
-	// joining ImageVulns × Pods. Reset between refreshes inside the call.
-	cvmetrics.EmitImageVulnMetrics(clusterData.Pods, clusterData.ImageVulns)
+	// joining ImageVulns × Pods. Stale series are dropped inside the call,
+	// except a partial cluster's.
+	cvmetrics.EmitImageVulnMetrics(clusterData.Pods, clusterData.ImageVulns, partialClusters)
 
 	diagrams := s.generate(clusterData)
 
@@ -501,7 +507,7 @@ func (s *Server) refresh(ctx context.Context) {
 	go func() {
 		s.imageChecker.Check(clusterData.Pods)
 		// Pin findings need the registry digests the check just refreshed.
-		cvmetrics.EmitImagePinMetrics(clusterData.Pods, s.imageChecker.GetDigest)
+		cvmetrics.EmitImagePinMetrics(clusterData.Pods, s.imageChecker.GetDigest, partialClusters)
 
 		imagesResult := diagram.GenerateImages(clusterData, s.imageChecker)
 		s.mu.Lock()
