@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -88,8 +89,13 @@ type Server struct {
 	dbPending atomic.Bool // DATABASE_URL set, connect attempt still running
 	ready     atomic.Bool // the first refresh has published
 
-	kick chan struct{}  // asks refreshLoop for an immediate refresh
-	bg   sync.WaitGroup // background work Start waits for before closing the DB
+	kick  chan struct{}   // asks refreshLoop for an immediate refresh
+	bg    sync.WaitGroup  // background work Start waits for before closing the DB
+	bgCtx context.Context // set by serve before any request; see backgroundContext
+
+	// Single-flight for EAM work: one sync and one enrichment at a time,
+	// whether started by a refresh or by a POST.
+	syncRunning, enrichRunning atomic.Bool
 }
 
 // eamState is everything that exists only once the EAM database is up.
@@ -197,11 +203,12 @@ func (s *Server) serve(ctx context.Context, ln net.Listener) error {
 	srv := &http.Server{Handler: withCORS(s.routes()), ReadHeaderTimeout: 10 * time.Second}
 	slog.Info("starting server", "addr", ln.Addr().String(), "refresh", s.cfg.RefreshInterval, "dataSources", len(s.cfg.DataSources))
 
-	serveErr := make(chan error, 1)
-	go func() { serveErr <- srv.Serve(ln) }()
-
 	bgCtx, stopBackground := context.WithCancel(ctx)
 	defer stopBackground()
+	s.bgCtx = bgCtx // before Serve: handlers read it
+
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.Serve(ln) }()
 	s.goBackground(func() { s.bootstrap(bgCtx) })
 
 	var err error
@@ -690,13 +697,17 @@ func (s *Server) refresh(ctx context.Context) {
 		// fatal, skipped entirely when the parse was partial.
 		s.goBackground(func() { s.captureSnapshot(ctx, clusterData, diagrams, partial) })
 
-		// Run EAM discovery sync asynchronously, then AI enrichment for new apps
+		// Run EAM discovery sync asynchronously, then AI enrichment for new
+		// apps. A sync still running (manual trigger, slow DB) is left to
+		// finish; the next refresh syncs again.
 		s.goBackground(func() {
-			result := st.syncer.Sync(ctx, clusterData)
+			result, ran := s.runSync(ctx, st, clusterData)
+			if !ran {
+				slog.Info("EAM sync already running, skipping this refresh's")
+				return
+			}
 			if st.enricher != nil && result.AppsCreated > 0 {
-				if err := st.enricher.EnrichNew(ctx); err != nil {
-					slog.Error("ai enrichment after refresh failed", "error", err)
-				}
+				s.startEnrichment("refresh", st.enricher.EnrichNew)
 			}
 		})
 	}
@@ -910,63 +921,141 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// Bounds for the EAM work started from a refresh or a manual POST. The
+// sync is a few hundred upserts; enrichment is one LLM call per app at a
+// concurrency of five, plus two batch prompts.
+const (
+	syncTimeout   = 5 * time.Minute
+	enrichTimeout = 30 * time.Minute
+)
+
+// backgroundContext is the context work started from a request runs
+// under: it outlives the request (a client that disconnects does not abort
+// a sync halfway) but not the server.
+func (s *Server) backgroundContext() context.Context {
+	if s.bgCtx != nil {
+		return s.bgCtx
+	}
+	return context.Background()
+}
+
+// runSync runs one EAM discovery sync, bounded by syncTimeout, unless one
+// is already running (ran=false). Refresh-triggered and manual syncs share
+// the guard: two concurrent syncs race each other's upserts.
+func (s *Server) runSync(parent context.Context, st *eamState, cd *model.ClusterData) (result *discovery.SyncResult, ran bool) {
+	if !s.syncRunning.CompareAndSwap(false, true) {
+		return nil, false
+	}
+	defer s.syncRunning.Store(false)
+	ctx, cancel := context.WithTimeout(parent, syncTimeout)
+	defer cancel()
+	return st.syncer.Sync(ctx, cd), true
+}
+
+// startEnrichment runs one AI enrichment pass in the background, bounded
+// by enrichTimeout, unless one is already running (returns false).
+func (s *Server) startEnrichment(what string, run func(ctx context.Context) error) bool {
+	if !s.enrichRunning.CompareAndSwap(false, true) {
+		return false
+	}
+	s.goBackground(func() {
+		defer s.enrichRunning.Store(false)
+		ctx, cancel := context.WithTimeout(s.backgroundContext(), enrichTimeout)
+		defer cancel()
+		if err := run(ctx); err != nil {
+			slog.Error("ai enrichment failed", "trigger", what, "error", err)
+		}
+	})
+	return true
+}
+
+// handleSyncTrigger — POST /api/eam/sync/trigger: one sync now, 409 while
+// another is running.
 func (s *Server) handleSyncTrigger(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	cd := s.clusterData
 	s.mu.RUnlock()
-
 	if cd == nil {
-		http.Error(w, `{"error":"no cluster data available yet"}`, http.StatusServiceUnavailable)
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "no cluster data available yet"})
 		return
 	}
 
 	st := s.eam.Load()
-	result := st.syncer.Sync(r.Context(), cd)
-
-	// Trigger async AI enrichment for new apps if enricher is available
-	if st.enricher != nil && result.AppsCreated > 0 {
-		go func() {
-			if err := st.enricher.EnrichNew(context.Background()); err != nil {
-				slog.Error("ai enrichment after sync failed", "error", err)
-			}
-		}()
+	result, ran := s.runSync(s.backgroundContext(), st, cd)
+	if !ran {
+		writeJSONStatus(w, http.StatusConflict, map[string]string{"error": "a sync is already running"})
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(result)
+	// Enrich the apps this sync created, unless an enrichment is running
+	// already (it will pick them up: EnrichNew selects by state).
+	if st.enricher != nil && result.AppsCreated > 0 {
+		s.startEnrichment("sync", st.enricher.EnrichNew)
+	}
+	writeJSON(w, result)
 }
 
+// handleEnrich — POST /api/eam/enrich: a full enrichment pass in the
+// background, 409 while one is running.
 func (s *Server) handleEnrich(w http.ResponseWriter, r *http.Request) {
-	// Run full AI enrichment in background
-	go func() {
-		if err := s.eam.Load().enricher.EnrichAll(context.Background()); err != nil {
-			slog.Error("manual ai enrichment failed", "error", err)
-		}
-	}()
-
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"status":"enrichment started"}`))
+	st := s.eam.Load()
+	if !s.startEnrichment("manual", st.enricher.EnrichAll) {
+		writeJSONStatus(w, http.StatusConflict, map[string]string{"error": "an enrichment is already running"})
+		return
+	}
+	writeJSONStatus(w, http.StatusAccepted, map[string]string{"status": "enrichment started"})
 }
 
+// handleSyncLogs — GET /api/eam/sync/logs: the 20 most recent syncs.
 func (s *Server) handleSyncLogs(w http.ResponseWriter, r *http.Request) {
 	logs, err := s.database().ListSyncLogs(r.Context(), 20)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err), http.StatusInternalServerError)
+		writeErr(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(logs)
+	if logs == nil {
+		logs = []store.SyncLog{}
+	}
+	writeJSON(w, logs)
 }
 
+func writeJSONStatus(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// withCORS keeps the API readable cross-origin and makes it impossible to
+// mutate cross-site. The browser never calls this API (web/ fetches it
+// server-side, from the SSR loaders), so nothing legitimate needs more:
+//
+//   - preflight allows GET and HEAD only, so a browser will not send a
+//     cross-origin POST with a JSON body;
+//   - a POST must carry Content-Type: application/json. The "simple"
+//     requests a page can send without preflight (form posts, text/plain)
+//     are rejected with 415 before they reach a handler.
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		if r.Method == http.MethodOptions {
+		h := w.Header()
+		h.Set("Access-Control-Allow-Origin", "*")
+		h.Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+		h.Set("Access-Control-Allow-Headers", "Content-Type")
+		switch r.Method {
+		case http.MethodOptions:
 			w.WriteHeader(http.StatusNoContent)
 			return
+		case http.MethodGet, http.MethodHead:
+		default:
+			if !isJSONContent(r.Header.Get("Content-Type")) {
+				writeJSONStatus(w, http.StatusUnsupportedMediaType, map[string]string{"error": "Content-Type must be application/json"})
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isJSONContent(ct string) bool {
+	mt, _, err := mime.ParseMediaType(ct)
+	return err == nil && mt == "application/json"
 }

@@ -162,6 +162,28 @@ func TestEAMComesUpAfterConnect(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("/api/eam/applications = %d once connected", resp.StatusCode)
 	}
+
+	// A manual sync through the full middleware stack, then its log.
+	resp, err = http.Post(base+"/api/eam/sync/trigger", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusConflict {
+		t.Fatalf("sync trigger = %d", resp.StatusCode)
+	}
+	resp, err = http.Get(base + "/api/eam/sync/logs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&logs); err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("sync logs = %d, decode error %v", resp.StatusCode, err)
+	}
+	_ = resp.Body.Close()
+	if len(logs) == 0 {
+		t.Fatal("expected at least the sync just triggered in the logs")
+	}
 	if err := stop(); err != nil {
 		t.Fatalf("shutdown = %v", err)
 	}
