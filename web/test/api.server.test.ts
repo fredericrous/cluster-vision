@@ -20,7 +20,41 @@ describe("fetchDiagrams", () => {
         HttpResponse.json({ error: "boom" }, { status: 500 })
       )
     );
-    await expect(fetchDiagrams()).rejects.toThrow("API error: 500");
+    const err = await fetchDiagrams().catch((e) => e);
+    expect(err.init.status).toBe(500);
+    expect(err.data.error).toBe("boom");
+  });
+
+  it("keeps the 503 the API answers before the first sync", async () => {
+    server.use(
+      http.get("http://localhost:8080/api/diagrams", () =>
+        HttpResponse.json({ error: "no cluster data available yet" }, { status: 503 })
+      )
+    );
+    const err = await fetchDiagrams().catch((e) => e);
+    expect(err.init.status).toBe(503);
+  });
+
+  it("maps an unknown snapshot to a 404 route response", async () => {
+    server.use(
+      http.get("http://localhost:8080/api/snapshots/:id/diagrams", () =>
+        HttpResponse.json({ error: "snapshot not found" }, { status: 404 })
+      )
+    );
+    const err = await fetchDiagrams(
+      new Request("http://x/topology?before=prev&after=bogus")
+    ).catch((e) => e);
+    expect(err.init.status).toBe(404);
+    expect(err.data).toEqual({ error: "snapshot not found", kind: "snapshot" });
+  });
+
+  it("maps an unreachable API to a 502 route response", async () => {
+    server.use(
+      http.get("http://localhost:8080/api/diagrams", () => HttpResponse.error())
+    );
+    const err = await fetchDiagrams().catch((e) => e);
+    expect(err.init.status).toBe(502);
+    expect(err.data.error).toContain("Could not reach the Cluster Vision API");
   });
 });
 
@@ -33,9 +67,9 @@ describe("fetchDiagram", () => {
   });
 
   it("throws when the diagram does not exist", async () => {
-    await expect(fetchDiagram("nope")).rejects.toThrow(
-      'Diagram "nope" not found'
-    );
+    const err = await fetchDiagram("nope").catch((e) => e);
+    expect(err.init.status).toBe(404);
+    expect(err.data).toEqual({ error: 'Diagram "nope" not found', kind: "diagram" });
   });
 });
 

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { Route } from "./+types/security";
-import { fetchDiagrams } from "../api.server";
+import { diagramNotFound, fetchDiagrams } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
 import {
   DataTable,
@@ -29,7 +29,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const table = data.diagrams.find((d) => d.id === "security");
   const chart = data.diagrams.find((d) => d.id === "security-chart");
   if (!table) {
-    throw new Error('Diagram "security" not found');
+    throw diagramNotFound("security");
   }
   return { table, chart, generatedAt: data.generated_at };
 }
