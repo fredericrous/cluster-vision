@@ -169,14 +169,24 @@ func dedup(ss []string) []string {
 	return result
 }
 
-// PrimaryImageTag extracts the main image tag from a list of images.
+// PrimaryImageTag extracts the tag of the first image: its digest when it
+// is pinned by digest alone, nil when it names no tag at all (an implicit
+// "latest" is not recorded as one). The tag separator is the last ":"
+// after the last "/", so a registry port is never taken for a tag.
 func PrimaryImageTag(images []string) *string {
 	if len(images) == 0 {
 		return nil
 	}
-	parts := strings.SplitN(images[0], ":", 2)
-	if len(parts) == 2 {
-		return &parts[1]
+	ref := images[0]
+	_, _, tag, digest := model.SplitImageRef(ref)
+	if tag == "" {
+		if digest == "" {
+			return nil
+		}
+		return &digest
 	}
-	return nil
+	if name, _, _ := strings.Cut(ref, "@"); !strings.HasSuffix(name, ":"+tag) {
+		return nil // SplitImageRef's implicit "latest"
+	}
+	return &tag
 }

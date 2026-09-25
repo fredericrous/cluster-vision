@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/fredericrous/cluster-vision/internal/model"
@@ -261,6 +262,11 @@ func TestPrimaryImageTag(t *testing.T) {
 		{"empty slice returns nil", nil, nil},
 		{"uses first image only", []string{"a:v1", "b:v2"}, strPtr("v1")},
 		{"sha tag", []string{"repo:sha-abc123"}, strPtr("sha-abc123")},
+		{"registry port", []string{"registry.local:5000/team/app:1.4.2"}, strPtr("1.4.2")},
+		{"registry port, no tag", []string{"registry.local:5000/team/app"}, nil},
+		{"tag and digest", []string{"ghcr.io/x/y:1.2.3@sha256:" + strings.Repeat("a", 64)}, strPtr("1.2.3")},
+		{"digest only", []string{"ghcr.io/x/y@sha256:" + strings.Repeat("a", 64)}, strPtr("sha256:" + strings.Repeat("a", 64))},
+		{"explicit latest", []string{"nginx:latest"}, strPtr("latest")},
 	}
 
 	for _, tt := range tests {
