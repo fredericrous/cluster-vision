@@ -80,3 +80,16 @@ describe("fetchDiagramsByPrefix", () => {
     expect(diagrams[0].id).toBe("topology");
   });
 });
+
+describe("toRouteError", () => {
+  it("leaves the wording to the boundary when the API sent no message", async () => {
+    server.use(
+      http.get("http://localhost:8080/api/snapshots/:id/diagrams", () =>
+        new HttpResponse("404 page not found", { status: 404 })
+      )
+    );
+    const err = await fetchDiagrams(new Request("http://x/?after=bogus")).catch((e) => e);
+    expect(err.init.status).toBe(404);
+    expect(err.data).toEqual({ kind: "snapshot" });
+  });
+});

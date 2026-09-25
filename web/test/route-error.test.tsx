@@ -24,7 +24,10 @@ describe("describeRouteError", () => {
   it("names a missing snapshot on 404", () => {
     const v = describeRouteError(response(404, { error: "snapshot not found", kind: "snapshot" }));
     expect(v.title).toBe("Snapshot not found");
-    expect(v.detail).toBe("snapshot not found");
+    // A bare "snapshot not found" only repeats the title: explain instead.
+    expect(v.detail).toContain("does not exist, or it has expired");
+    const d = describeRouteError(response(404, { error: 'selector "x": no such snapshot' }));
+    expect(d.detail).toBe('selector "x": no such snapshot');
   });
 
   it("names a missing diagram on 404", () => {

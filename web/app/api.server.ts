@@ -162,7 +162,10 @@ export async function fetchDiagrams(request?: Request): Promise<DiagramsResponse
  *  as a bare "Unexpected Server Error" 500 in production. */
 export function toRouteError(e: unknown) {
   if (e instanceof ApiError) {
-    const body: RouteErrorBody = { error: e.detail ?? e.message };
+    // Only the API's own message goes in the body; without one the error
+    // boundary words the status itself ("API error: 404 Not Found" is not
+    // something to show a user), and statusText keeps the raw line.
+    const body: RouteErrorBody = e.detail ? { error: e.detail } : {};
     if (e.status === 404) body.kind = "snapshot";
     return data(body, { status: e.status, statusText: e.message });
   }

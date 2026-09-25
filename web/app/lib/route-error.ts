@@ -44,11 +44,15 @@ export function describeRouteError(error: unknown): RouteErrorView {
         error.data && typeof error.data === "object"
           ? (error.data as RouteErrorBody).kind
           : undefined;
+      const title = kind === "diagram" ? "Diagram not found" : "Snapshot not found";
+      // The API's bare "snapshot not found" only repeats the title.
+      const informative =
+        detail && detail.toLowerCase() !== title.toLowerCase() ? detail : undefined;
       return {
         variant: "warning",
-        title: kind === "diagram" ? "Diagram not found" : "Snapshot not found",
+        title,
         detail:
-          detail ??
+          informative ??
           "The snapshot or diagram this link points at does not exist, or it has expired.",
         status: 404,
       };
