@@ -460,7 +460,7 @@ func (ic *ImageChecker) fetchWithAuth(reqURL, registryHost string) (body []byte,
 			return nil, "", fmt.Errorf("registry returned %d after auth", resp2.StatusCode)
 		}
 
-		b, readErr := io.ReadAll(io.LimitReader(resp2.Body, 1<<20))
+		b, readErr := readCapped(resp2.Body, maxRegistryResponseBytes)
 		return b, parseLinkNext(resp2.Header.Get("Link"), reqURL), readErr
 	}
 
@@ -468,8 +468,28 @@ func (ic *ImageChecker) fetchWithAuth(reqURL, registryHost string) (body []byte,
 		return nil, "", fmt.Errorf("registry returned %d", resp.StatusCode)
 	}
 
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	b, err := readCapped(resp.Body, maxRegistryResponseBytes)
 	return b, parseLinkNext(resp.Header.Get("Link"), reqURL), err
+}
+
+// maxRegistryResponseBytes bounds one registry response. Tag lists are not
+// small: registry.k8s.io redirects to Artifact Registry, which ignores n=
+// and returns every tag in one page together with a "manifest" map of every
+// digest — 1.37 MB for kube-apiserver in 2026-09. The old 1 MiB cap cut
+// that JSON mid-object ("unexpected end of JSON input").
+const maxRegistryResponseBytes = 32 << 20
+
+// readCapped reads r to the end, failing — rather than silently truncating,
+// as io.LimitReader does — when it holds more than limit bytes.
+func readCapped(r io.Reader, limit int64) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > limit {
+		return nil, fmt.Errorf("registry response exceeds %d bytes", limit)
+	}
+	return b, nil
 }
 
 // getToken parses a WWW-Authenticate Bearer challenge and fetches an anonymous token.
