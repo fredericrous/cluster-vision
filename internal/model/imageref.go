@@ -9,6 +9,8 @@ import "strings"
 //	ghcr.io/foo/bar@sha256:<hex>          → ghcr.io, foo/bar, "",    sha256:<hex>
 //	nginx                                  → docker.io, library/nginx, latest, ""
 //	registry.local:5000/foo:1.0            → registry.local:5000, foo, 1.0, ""
+//	docker.io/traefik:v3                   → docker.io, library/traefik, v3, ""
+//	index.docker.io/velero/velero:v1       → docker.io, velero/velero, v1, ""
 //
 // A pinned reference keeps BOTH its tag and its digest: the tag is what the
 // version checker compares against the registry, the digest is what the
@@ -38,6 +40,15 @@ func SplitImageRef(ref string) (registry, repo, tag, digest string) {
 
 	first := parts[0]
 	if strings.Contains(first, ".") || strings.Contains(first, ":") || first == "localhost" {
+		// Docker Hub under any of its names is docker.io, and a single-name
+		// repository there lives under library/: "docker.io/traefik" is
+		// docker.io/library/traefik, the path its registry API answers to.
+		if dockerHubHosts[first] {
+			if !strings.Contains(parts[1], "/") {
+				return "docker.io", "library/" + parts[1], tag, digest
+			}
+			return "docker.io", parts[1], tag, digest
+		}
 		return first, parts[1], tag, digest
 	}
 

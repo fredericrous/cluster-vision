@@ -165,7 +165,14 @@ func (ic *ImageChecker) Check(pods []model.PodImageInfo) {
 			continue
 		}
 
-		allTags, err := ic.listTags(ri.registry, ri.path)
+		allTags, truncated, err := ic.listTagPages(ri.registry, ri.path, "", nil)
+		if err == nil && truncated {
+			// Too many tags to list whole (envoyproxy/envoy has 50k+ dev
+			// builds): add the tags that can be newer than each deployed one.
+			for tag := range ri.tags {
+				allTags = append(allTags, ic.tagsAfter(ri.registry, ri.path, tag)...)
+			}
+		}
 		if err != nil {
 			if strings.Contains(err.Error(), "429") {
 				slog.Warn("image check: rate limited, skipping registry", "registry", ri.registry)
@@ -376,39 +383,97 @@ func highestMatchingTag(deployedTag string, allTags []string) string {
 // keeps answering with a next link (or links back to itself) stops here.
 const maxTagPages = 50
 
-// listTags fetches the tag list for an image from an OCI registry.
+// listTags fetches the whole tag list for an image from an OCI registry,
+// up to maxTagPages pages.
 func (ic *ImageChecker) listTags(registry, imagePath string) ([]string, error) {
+	tags, _, err := ic.listTagPages(registry, imagePath, "", nil)
+	return tags, err
+}
+
+// listTagPages lists tags from the registry's tags/list, starting after
+// `last` when it is set, and stopping early once stop reports true for a
+// tag (that tag is not included). truncated reports that maxTagPages ran
+// out with more pages to go.
+func (ic *ImageChecker) listTagPages(registry, imagePath, last string, stop func(string) bool) (tags []string, truncated bool, err error) {
 	host := registry
 	// docker.io → registry-1.docker.io
 	if host == "docker.io" {
 		host = "registry-1.docker.io"
 	}
 
-	var allTags []string
 	tagURL := fmt.Sprintf("https://%s/v2/%s/tags/list?n=1000", host, imagePath)
+	if last != "" {
+		tagURL += "&last=" + url.QueryEscape(last)
+	}
 
 	for page := 0; tagURL != ""; page++ {
 		if page == maxTagPages {
-			slog.Warn("image check: tag list truncated", "image", host+"/"+imagePath, "pages", maxTagPages)
-			break
+			slog.Debug("image check: tag list truncated", "image", host+"/"+imagePath, "pages", maxTagPages, "last", last)
+			return tags, true, nil
 		}
 		body, nextURL, err := ic.fetchWithAuth(tagURL, host)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 
 		var tagList struct {
 			Tags []string `json:"tags"`
 		}
 		if err := json.Unmarshal(body, &tagList); err != nil {
-			return nil, fmt.Errorf("parsing tags: %w", err)
+			return nil, false, fmt.Errorf("parsing tags: %w", err)
 		}
 
-		allTags = append(allTags, tagList.Tags...)
+		for _, t := range tagList.Tags {
+			if stop != nil && stop(t) {
+				return tags, false, nil
+			}
+			tags = append(tags, t)
+		}
 		tagURL = nextURL
 	}
 
-	return allTags, nil
+	return tags, false, nil
+}
+
+// tagsAfter returns the tags that can be newer than tag, for a repository
+// too large to list whole. Registries order tags/list one of two ways:
+//
+//   - lexically (Docker Hub, quay.io, the distribution spec): seek with
+//     last=<the tag's prefix before its version> and read while tags keep
+//     that prefix — "distroless-v1.39.1" reads only the distroless-v* tags;
+//   - by push time (ghcr.io), where last= must name an existing tag: the
+//     prefix seek returns nothing, and last=<the tag itself> returns every
+//     tag pushed after it, which is where a newer release is.
+//
+// Errors are logged and yield no tags: the caller still has the truncated
+// full listing.
+func (ic *ImageChecker) tagsAfter(registry, imagePath, tag string) []string {
+	if prefix := versionPrefix(tag); prefix != "" {
+		tags, _, err := ic.listTagPages(registry, imagePath, prefix, func(t string) bool {
+			return !strings.HasPrefix(t, prefix)
+		})
+		if err == nil && len(tags) > 0 {
+			return tags
+		}
+	}
+	tags, truncated, err := ic.listTagPages(registry, imagePath, tag, nil)
+	if err != nil {
+		slog.Warn("image check: listing tags after the deployed one failed", "image", registry+"/"+imagePath, "tag", tag, "error", err)
+		return nil
+	}
+	if truncated {
+		slog.Warn("image check: tag list truncated", "image", registry+"/"+imagePath, "after", tag, "pages", maxTagPages)
+	}
+	return tags
+}
+
+// versionPrefix is the part of a tag before its first digit: "v" for
+// "v1.2.3", "distroless-v" for "distroless-v1.39.1", "" for "1.2.3".
+func versionPrefix(tag string) string {
+	if i := strings.IndexAny(tag, "0123456789"); i > 0 {
+		return tag[:i]
+	}
+	return ""
 }
 
 // fetchWithAuth performs an HTTP GET, handling 401 Bearer challenge auth.
