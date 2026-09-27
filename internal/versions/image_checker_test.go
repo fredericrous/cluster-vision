@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -150,5 +152,83 @@ func TestReadCappedFailsInsteadOfTruncating(t *testing.T) {
 	}
 	if _, err := readCapped(strings.NewReader("123456"), 5); err == nil {
 		t.Fatal("over the limit: no error; the body would be silently truncated")
+	}
+}
+
+// fakeTagRegistry serves tags/list one tag per page, like a registry whose
+// repository is far bigger than maxTagPages pages. lexical registries sort
+// and accept any last=; push-order ones (ghcr.io) keep push order and only
+// accept last= naming an existing tag, answering {"tags":null} otherwise.
+func fakeTagRegistry(t *testing.T, tags []string, lexical bool) *httptest.Server {
+	t.Helper()
+	order := append([]string(nil), tags...)
+	if lexical {
+		sort.Strings(order)
+	}
+	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := 0
+		if last := r.URL.Query().Get("last"); last != "" {
+			start = -1
+			for i, tag := range order {
+				if lexical && tag > last {
+					start = i
+					break
+				}
+				if !lexical && tag == last {
+					start = i + 1
+					break
+				}
+			}
+			if start < 0 || start >= len(order) {
+				_, _ = w.Write([]byte(`{"tags":null}`))
+				return
+			}
+		}
+		tag := order[start]
+		if start+1 < len(order) {
+			w.Header().Set("Link", fmt.Sprintf(`</v2/x/tags/list?n=1000&last=%s>; rel="next"`, url.QueryEscape(tag)))
+		}
+		_, _ = fmt.Fprintf(w, `{"tags":[%q]}`, tag)
+	}))
+}
+
+func TestTagsAfterFindsNewerTagsInHugeRepos(t *testing.T) {
+	// 120 dev builds that sort (and were pushed) before the releases, so a
+	// capped full listing never reaches v1.40.0.
+	var tags []string
+	for i := 0; i < 120; i++ {
+		tags = append(tags, fmt.Sprintf("dev-%03d", i))
+	}
+	tags = append(tags, "v1.39.1", "v1.39.1-cuda", "v1.40.0", "v1.40.0-cuda")
+
+	for _, lexical := range []bool{true, false} {
+		srv := fakeTagRegistry(t, tags, lexical)
+		ic := NewImageChecker()
+		ic.client = srv.Client()
+		host := strings.TrimPrefix(srv.URL, "https://")
+
+		all, truncated, err := ic.listTagPages(host, "x", "", nil)
+		if err != nil || !truncated || len(all) != maxTagPages {
+			t.Fatalf("lexical=%v: full listing = %d tags, truncated=%v, err=%v; want %d, true", lexical, len(all), truncated, err, maxTagPages)
+		}
+		all = append(all, ic.tagsAfter(host, "x", "v1.39.1")...)
+		if got := highestMatchingTag("v1.39.1", all); got != "v1.40.0" {
+			t.Errorf("lexical=%v: latest for v1.39.1 = %q; want v1.40.0", lexical, got)
+		}
+		all = append(all, ic.tagsAfter(host, "x", "v1.39.1-cuda")...)
+		if got := highestMatchingTag("v1.39.1-cuda", all); got != "v1.40.0-cuda" {
+			t.Errorf("lexical=%v: latest for v1.39.1-cuda = %q; want v1.40.0-cuda", lexical, got)
+		}
+		srv.Close()
+	}
+}
+
+func TestVersionPrefix(t *testing.T) {
+	for tag, want := range map[string]string{
+		"v1.2.3": "v", "distroless-v1.39.1": "distroless-v", "1.2.3": "", "latest": "",
+	} {
+		if got := versionPrefix(tag); got != want {
+			t.Errorf("versionPrefix(%q) = %q; want %q", tag, got, want)
+		}
 	}
 }
