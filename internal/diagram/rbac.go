@@ -50,7 +50,13 @@ func GenerateRBAC(data *model.ClusterData) model.DiagramResult {
 		if rows[i].Subject != rows[j].Subject {
 			return rows[i].Subject < rows[j].Subject
 		}
-		return rows[i].Role < rows[j].Role
+		if rows[i].Role != rows[j].Role {
+			return rows[i].Role < rows[j].Role
+		}
+		if rows[i].RoleKind != rows[j].RoleKind {
+			return rows[i].RoleKind < rows[j].RoleKind
+		}
+		return rows[i].Namespace < rows[j].Namespace
 	})
 
 	tableJSON, _ := json.Marshal(rows)

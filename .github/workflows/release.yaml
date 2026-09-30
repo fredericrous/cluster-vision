@@ -18,6 +18,15 @@ jobs:
     name: CI
     uses: ./.github/workflows/ci.yaml
     secrets: inherit
+    # A called workflow may not ask for more than its caller grants, and
+    # GitHub checks that statically, before any job runs: ci.yaml's pr-image
+    # job requests packages/pull-requests write, so without this grant every
+    # tag push ends in startup_failure (v0.25.0). pr-image only runs on
+    # pull_request events, so on a tag the write grants are never used.
+    permissions:
+      contents: read
+      packages: write
+      pull-requests: write
 
   build:
     name: Build & push image
@@ -115,7 +124,7 @@ jobs:
           EOF
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           body_path: release-notes.md
           draft: false

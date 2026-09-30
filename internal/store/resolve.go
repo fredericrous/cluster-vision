@@ -71,5 +71,8 @@ func (db *DB) ResolveCoordinates(ctx context.Context, cluster, namespace, helmRe
 		}
 		matches = append(matches, m)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("ResolveCoordinates: iterating rows: %w", err)
+	}
 	return matches, nil
 }

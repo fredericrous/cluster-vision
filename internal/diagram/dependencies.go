@@ -276,9 +276,23 @@ func discoverCiliumMeshEdges(data *model.ClusterData, idSet map[string]bool) []F
 		return bestID
 	}
 
+	// Walk the Services in namespace/name order: map order would reshuffle
+	// the edges (and the flow JSON) on every refresh.
+	keys := make([]svcKey, 0, len(byKey))
+	for k := range byKey {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].ns != keys[j].ns {
+			return keys[i].ns < keys[j].ns
+		}
+		return keys[i].name < keys[j].name
+	})
+
 	var edges []FlowEdge
 	seen := make(map[string]bool)
-	for k, peers := range byKey {
+	for _, k := range keys {
+		peers := byKey[k]
 		if len(peers) < 2 {
 			continue
 		}

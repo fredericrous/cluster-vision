@@ -42,6 +42,9 @@ func (db *DB) ListCapabilities(ctx context.Context) ([]BusinessCapability, error
 		}
 		caps = append(caps, c)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("ListCapabilities: iterating rows: %w", err)
+	}
 	return caps, nil
 }
 
@@ -65,6 +68,9 @@ func (db *DB) GetCapabilityTree(ctx context.Context) ([]CapabilityTreeNode, erro
 		}
 		n.Children = []CapabilityTreeNode{}
 		all = append(all, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("GetCapabilityTree: iterating rows: %w", err)
 	}
 
 	return buildTree(all), nil

@@ -14,6 +14,7 @@ import { FlowNode, type FlowNodeData } from "./flow-node";
 import { LayerGroup } from "./flow-group";
 import type { Change, DiagramDiff } from "../api.server";
 import styles from "./flow-diagram.module.css";
+import { edgeLook } from "../lib/edge-style";
 
 interface FlowNodeRaw {
   id: string;
@@ -413,21 +414,12 @@ function buildLayout(
     }
   }
 
-  const edgeDiffStyle = (id: string): Record<string, unknown> => {
-    if (!compareActive) return {};
-    const c = ops.get(id);
-    if (!c) return { style: { opacity: 0.35 } };
-    if (c.op === "added") return { style: { stroke: "#22c55e", strokeWidth: 2.5 } };
-    if (c.op === "removed") return { style: { stroke: "#ef4444", strokeWidth: 2, strokeDasharray: "2 4" } };
-    return { style: { stroke: "#f59e0b", strokeWidth: 2.5, strokeDasharray: "8 4" } };
-  };
-
   const edges: Edge[] = rawEdges.map((e) => ({
     id: e.id,
     source: e.source,
     target: e.target,
     type: "smartStep",
-    ...edgeDiffStyle(e.id),
+    ...edgeLook(!!e.crossCluster, ops.get(e.id), compareActive),
     ...(e.label
       ? {
           label: e.label,
@@ -435,12 +427,6 @@ function buildLayout(
           labelBgStyle: { fill: "rgba(15, 23, 42, 0.85)" },
           labelBgPadding: [4, 2] as [number, number],
           labelBgBorderRadius: 3,
-        }
-      : {}),
-    ...(e.crossCluster
-      ? {
-          animated: true,
-          style: { strokeDasharray: "8 4", stroke: "#f59e0b", strokeWidth: 2 },
         }
       : {}),
   }));

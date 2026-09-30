@@ -210,14 +210,13 @@ func TestCVEEnrichmentMethodNotAllowed(t *testing.T) {
 	}
 }
 
-// The route must not live behind the DB-conditional block: a caller that
+// The route must not be DB-gated: a caller that
 // gates a deployment on this data would otherwise read a Postgres outage as
 // a 404 and, depending on its ladder, as a clean image.
 func TestCVEEnrichmentRegisteredWithoutDB(t *testing.T) {
-	s := &Server{exploit: versions.NewExploitEnricher(nil)}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/health", s.handleHealth)
-	mux.HandleFunc("POST /api/cve/enrichment", handleCVEEnrichment(s.exploit))
+	s := &Server{}
+	s.exploit.Store(versions.NewExploitEnricher(nil))
+	mux := s.routes()
 
 	req := httptest.NewRequest(http.MethodPost, "/api/cve/enrichment",
 		strings.NewReader(`{"cves":["CVE-2024-0001"]}`))

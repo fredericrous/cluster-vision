@@ -92,6 +92,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Start returns only after a complete shutdown (HTTP drained, background
+	// work stopped, database closed), and nil when that shutdown was the
+	// normal response to SIGTERM/SIGINT — a rolling update is not a failure.
 	if err := srv.Start(ctx); err != nil {
 		slog.Error("server error", "error", err)
 		os.Exit(1)

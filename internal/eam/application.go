@@ -13,6 +13,15 @@ func (h *Handler) listApplications(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	offset, _ := strconv.Atoi(q.Get("offset"))
+	if offset < 0 {
+		http.Error(w, `{"error":"offset must not be negative"}`, http.StatusBadRequest)
+		return
+	}
+	// The store caps the page too; clamping here keeps the handler honest
+	// on its own. limit <= 0 means "default page".
+	if limit > store.MaxApplicationsLimit {
+		limit = store.MaxApplicationsLimit
+	}
 
 	f := store.ApplicationFilter{
 		Status:  q.Get("status"),

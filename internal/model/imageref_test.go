@@ -18,6 +18,13 @@ func TestSplitImageRef(t *testing.T) {
 		{"registry.local:5000/foo", "registry.local:5000", "foo", "latest", ""},
 		{"registry.local:5000/foo@" + d, "registry.local:5000", "foo", "", d},
 		{"localhost/x/y:t", "localhost", "x/y", "t", ""},
+		// An explicit Docker Hub host keeps its implicit library/ namespace
+		// and one spelling of the host (the image checker lists
+		// docker.io/traefik as library/traefik; without it, 401).
+		{"docker.io/traefik:v3.5", "docker.io", "library/traefik", "v3.5", ""},
+		{"docker.io/library/busybox:1.36", "docker.io", "library/busybox", "1.36", ""},
+		{"index.docker.io/velero/velero:v1.17.2", "docker.io", "velero/velero", "v1.17.2", ""},
+		{"registry-1.docker.io/nginx@" + d, "docker.io", "library/nginx", "", d},
 	}
 	for _, c := range cases {
 		reg, repo, tag, digest := SplitImageRef(c.ref)

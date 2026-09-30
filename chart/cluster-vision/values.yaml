@@ -2,13 +2,18 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/fredericrous/cluster-vision
-  tag: ""  # defaults to appVersion
+  # Defaults to appVersion. The chart passes the API settings as flags to the
+  # image's entrypoint, so pin a tag no older than the chart's appVersion.
+  tag: ""
   pullPolicy: IfNotPresent
 
 api:
+  # Port the Go API listens on (passed as -port). Probes, the Service's api
+  # port and the web server's API_URL all follow it.
   port: 8080
 
 web:
+  # Port the SSR web server listens on (passed as PORT).
   port: 3000
 
 service:
@@ -17,10 +22,17 @@ service:
 
 serviceAccount:
   create: true
+  # With create: false, name an existing ServiceAccount: the ClusterRole is
+  # bound to it, and the chart refuses to bind the namespace's `default` one.
   name: ""
 
 rbac:
   create: true
+  # Grant get/list/watch on Secrets cluster-wide. Only the Secrets inventory
+  # (name, namespace and key count in the Configs view) uses it; values are
+  # never read out, and dataSources are mounted as volumes, not read through
+  # the API. Off by default: the view then lists ConfigMaps only.
+  readSecrets: false
 
 # Name of the local cluster (shown in security table). Defaults to "Homelab" in code.
 clusterName: ""
@@ -45,6 +57,7 @@ dataSources: []
 # upstream registry URLs instead of querying the proxy (which only has cached tags).
 registryProxy: ""
 
+# How often the API re-reads the cluster (passed as -refresh; a Go duration).
 refresh: 5m
 
 # Optional: inject env vars from a Secret (e.g. DATABASE_URL, LITELLM_URL for EAM features)
@@ -53,6 +66,20 @@ refresh: 5m
 #       name: cluster-vision-eam-secrets
 #       optional: true
 envFrom: []
+
+# The image runs as the unprivileged `node` user (uid/gid 1000).
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
 
 resources:
   requests:

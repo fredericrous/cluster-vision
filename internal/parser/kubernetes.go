@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/fredericrous/cluster-vision/internal/model"
 
@@ -69,6 +70,9 @@ func isKindMissing(err error) bool {
 		strings.Contains(msg, "no matches for kind")
 }
 
+// apiRequestTimeout bounds each Kubernetes API request (rest.Config.Timeout).
+const apiRequestTimeout = 60 * time.Second
+
 // NewKubernetesParser creates a parser from a kubeconfig path and cluster name.
 // Pass "" for kubeconfig to use in-cluster config.
 // The platform parameter is optional; when set, all parsed nodes inherit it as a fallback.
@@ -90,6 +94,13 @@ func NewKubernetesParser(kubeconfig, clusterName, platform string) (*KubernetesP
 	}
 	if err != nil {
 		return nil, fmt.Errorf("building k8s config: %w", err)
+	}
+	// client-go's default is no timeout: a request to an API server that
+	// accepted the connection and then stopped answering blocks forever,
+	// and with it the whole refresh. Bound every request; a list that
+	// legitimately needs longer than this is a list we should page.
+	if cfg.Timeout == 0 {
+		cfg.Timeout = apiRequestTimeout
 	}
 
 	typed, err := kubernetes.NewForConfig(cfg)
@@ -258,6 +269,7 @@ func (p *KubernetesParser) parseNodes(ctx context.Context) []model.NodeInfo {
 				roles = append(roles, strings.TrimPrefix(label, "node-role.kubernetes.io/"))
 			}
 		}
+		sort.Strings(roles) // map order would reshuffle them on every refresh
 
 		cpu := n.Status.Capacity.Cpu().String()
 		memBytes := n.Status.Capacity.Memory().Value()
@@ -437,10 +449,28 @@ func (p *KubernetesParser) parseHTTPRoutes(ctx context.Context) []model.HTTPRout
 			}
 		}
 
-		// SectionName from first parentRef
-		if parentRefs, ok := spec["parentRefs"].([]interface{}); ok && len(parentRefs) > 0 {
-			if pr, ok := parentRefs[0].(map[string]interface{}); ok {
-				route.SectionName = strVal(pr, "sectionName")
+		// Parent refs; SectionName keeps the first one's for the
+		// security matrix's client-mTLS lookup.
+		if parentRefs, ok := spec["parentRefs"].([]interface{}); ok {
+			for _, raw := range parentRefs {
+				pr, ok := raw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				ref := model.ParentRef{
+					Group:       strVal(pr, "group"),
+					Kind:        strVal(pr, "kind"),
+					Namespace:   strVal(pr, "namespace"),
+					Name:        strVal(pr, "name"),
+					SectionName: strVal(pr, "sectionName"),
+				}
+				if ref.Namespace == "" {
+					ref.Namespace = route.Namespace
+				}
+				if len(route.ParentRefs) == 0 {
+					route.SectionName = ref.SectionName
+				}
+				route.ParentRefs = append(route.ParentRefs, ref)
 			}
 		}
 
@@ -533,7 +563,7 @@ func (p *KubernetesParser) parseSecurityPolicies(ctx context.Context) []model.Se
 
 	list, err := p.dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Debug("no envoy gateway security policies found", "error", err)
+		p.listFailed("envoy gateway securitypolicies", err)
 		return nil
 	}
 
@@ -560,7 +590,7 @@ func (p *KubernetesParser) parseClientTrafficPolicies(ctx context.Context) []mod
 
 	list, err := p.dynamic.Resource(gvr).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Debug("no client traffic policies found", "error", err)
+		p.listFailed("envoy gateway clienttrafficpolicies", err)
 		return nil
 	}
 
@@ -755,25 +785,50 @@ func (p *KubernetesParser) parseHelmReleases(ctx context.Context) []model.HelmRe
 			repoNS = item.GetNamespace()
 		}
 
-		// Try to get appVersion from status
+		targetNS := strVal(spec, "targetNamespace")
+		releaseName := strVal(spec, "releaseName")
+
+		// appVersion, and the release name Flux actually installed under,
+		// from the latest history entry.
 		appVersion := ""
 		if status, ok := item.Object["status"].(map[string]interface{}); ok {
 			if history, ok := status["history"].([]interface{}); ok && len(history) > 0 {
 				if latest, ok := history[0].(map[string]interface{}); ok {
 					appVersion = strVal(latest, "appVersion")
+					if name := strVal(latest, "name"); name != "" {
+						releaseName = name
+					}
+					// spec.chartRef (an OCIRepository or HelmChart) names
+					// no chart or version; the history entry does.
+					if chartName == "" {
+						chartName = strVal(latest, "chartName")
+					}
+					if version == "" {
+						version = strVal(latest, "chartVersion")
+					}
 				}
+			}
+		}
+		if releaseName == "" {
+			// Flux's default; it also shortens names over 53 characters,
+			// which only the history entry above reports faithfully.
+			releaseName = item.GetName()
+			if targetNS != "" {
+				releaseName = targetNS + "-" + item.GetName()
 			}
 		}
 
 		result = append(result, model.HelmReleaseInfo{
-			Name:       item.GetName(),
-			Namespace:  item.GetNamespace(),
-			Cluster:    p.clusterName,
-			ChartName:  chartName,
-			Version:    version,
-			RepoName:   repoName,
-			RepoNS:     repoNS,
-			AppVersion: appVersion,
+			Name:            item.GetName(),
+			Namespace:       item.GetNamespace(),
+			Cluster:         p.clusterName,
+			ChartName:       chartName,
+			Version:         version,
+			RepoName:        repoName,
+			RepoNS:          repoNS,
+			TargetNamespace: targetNS,
+			ReleaseName:     releaseName,
+			AppVersion:      appVersion,
 		})
 	}
 	return result
@@ -827,23 +882,22 @@ func (p *KubernetesParser) parsePods(ctx context.Context) []model.PodImageInfo {
 			continue
 		}
 
-		// Build image and imageID maps from status (status has resolved image refs)
-		statusImages := make(map[string]string)
+		// The image is the spec's reference: what the manifest says, and the
+		// only name that is about this pod. status.image is not — the runtime
+		// reports whichever name it first stored that image ID under, so a
+		// digest-identical image moved to another registry keeps showing its
+		// old name (live: ghcr.io/… for pods whose spec says
+		// git.daddyshome.fr/…), and a digest-pinned spec often shows only the
+		// bare "sha256:<id>". Spelling differences between the two ("nginx"
+		// vs "docker.io/library/nginx:latest") are model.ImageKey's job. What
+		// the node actually runs is kept from status.imageID.
 		imageIDs := make(map[string]string)
-		for _, cs := range pod.Status.ContainerStatuses {
-			statusImages[cs.Name] = cs.Image
-			imageIDs[cs.Name] = cs.ImageID
-		}
-		for _, cs := range pod.Status.InitContainerStatuses {
-			statusImages[cs.Name] = cs.Image
+		for _, cs := range append(pod.Status.ContainerStatuses, pod.Status.InitContainerStatuses...) {
 			imageIDs[cs.Name] = cs.ImageID
 		}
 
 		for _, c := range pod.Spec.Containers {
 			img := c.Image
-			if resolved := statusImages[c.Name]; resolved != "" {
-				img = resolved
-			}
 			result = append(result, model.PodImageInfo{
 				Cluster:       p.clusterName,
 				Namespace:     pod.Namespace,
@@ -856,9 +910,6 @@ func (p *KubernetesParser) parsePods(ctx context.Context) []model.PodImageInfo {
 		}
 		for _, c := range pod.Spec.InitContainers {
 			img := c.Image
-			if resolved := statusImages[c.Name]; resolved != "" {
-				img = resolved
-			}
 			result = append(result, model.PodImageInfo{
 				Cluster:       p.clusterName,
 				Namespace:     pod.Namespace,
@@ -1311,11 +1362,17 @@ func (p *KubernetesParser) parseConfigs(ctx context.Context) []model.ConfigInfo 
 		}
 	}
 
-	// Secrets — only metadata, never expose data
+	// Secrets — only metadata, never expose data. Reading Secrets is opt-in
+	// (the chart grants it only with rbac.readSecrets=true), so Forbidden
+	// means the Secrets inventory is switched off, not that the parse is
+	// partial: it must not block snapshots.
 	secrets, err := p.typed.CoreV1().Secrets("").List(ctx, metav1.ListOptions{})
-	if err != nil {
+	switch {
+	case apierrors.IsForbidden(err):
+		slog.Debug("secret listing not permitted; secrets inventory disabled", "cluster", p.clusterName)
+	case err != nil:
 		p.listFailed("secrets", err)
-	} else {
+	default:
 		for _, s := range secrets.Items {
 			result = append(result, model.ConfigInfo{
 				Name:      s.Name,
@@ -1499,16 +1556,14 @@ func (p *KubernetesParser) parseVulnReports(ctx context.Context) []model.ImageVu
 		server := strVal(registry, "server")
 		repository := strVal(artifact, "repository")
 		tag := strVal(artifact, "tag")
-		if repository == "" {
+		digest := strVal(artifact, "digest")
+		if repository == "" || (tag == "" && digest == "") {
 			continue
 		}
 
-		imageRef := repository
-		if server != "" {
-			imageRef = server + "/" + repository
-		}
-		if tag != "" {
-			imageRef = imageRef + ":" + tag
+		imageRef := trivyImageKey(server, repository, tag, digest)
+		if !strings.HasPrefix(digest, "sha256:") {
+			digest = ""
 		}
 
 		// Extract summary counts
@@ -1574,6 +1629,7 @@ func (p *KubernetesParser) parseVulnReports(ctx context.Context) []model.ImageVu
 		} else {
 			merged[key] = &model.ImageVuln{
 				Image:    imageRef,
+				Digest:   digest,
 				Cluster:  p.clusterName,
 				Critical: critical,
 				High:     high,
@@ -1588,7 +1644,38 @@ func (p *KubernetesParser) parseVulnReports(ctx context.Context) []model.ImageVu
 	for _, v := range merged {
 		result = append(result, *v)
 	}
+	// Map order would otherwise reach the snapshot model and every consumer
+	// that keeps the first report it sees.
+	sort.Slice(result, func(i, j int) bool { return result[i].Image < result[j].Image })
 	return result
+}
+
+// trivyImageKey is the model.ImageKey of a VulnerabilityReport's artifact.
+// Trivy names Docker Hub "index.docker.io" where pod specs say "docker.io"
+// or nothing at all, so the raw report ref never equals a pod's image.
+//
+// For a pod image pinned by digest, trivy-operator writes the whole pod
+// reference into artifact.tag ("docker.io/library/haproxy:3.2-alpine", or
+// "docker.io/coturn/coturn" with no tag at all). The real tag is recovered
+// from it; without one the key falls back to the digest.
+func trivyImageKey(server, repository, tag, digest string) string {
+	if strings.ContainsAny(tag, "/:") {
+		_, _, t, _ := model.SplitImageRef(tag)
+		if last := tag[strings.LastIndex(tag, "/")+1:]; !strings.Contains(last, ":") {
+			t = "" // SplitImageRef's "latest" default, not a real tag
+		}
+		tag = t
+	}
+	ref := repository
+	if server != "" {
+		ref = server + "/" + repository
+	}
+	if tag != "" {
+		ref += ":" + tag
+	} else {
+		ref += "@" + digest
+	}
+	return model.ImageKey(ref)
 }
 
 func intVal(m map[string]interface{}, key string) int {

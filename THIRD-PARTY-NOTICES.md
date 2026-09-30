@@ -41,7 +41,7 @@ file-level copyleft license that does not extend to the Licensed Work.
 | `github.com/google/uuid` | v1.6.0 | BSD-2-Clause or BSD-3-Clause |
 | `github.com/jackc/pgpassfile` | v1.0.0 | MIT |
 | `github.com/jackc/pgservicefile` | v0.0.0-20240606120523-5a60cdf6a761 | MIT |
-| `github.com/jackc/pgx/v5` | v5.8.0 | MIT |
+| `github.com/jackc/pgx/v5` | v5.9.2 | MIT |
 | `github.com/jackc/puddle/v2` | v2.2.2 | MIT |
 | `github.com/josharian/intern` | v1.0.0 | MIT |
 | `github.com/json-iterator/go` | v1.1.12 | MIT |
@@ -57,12 +57,12 @@ file-level copyleft license that does not extend to the Licensed Work.
 | `github.com/x448/float16` | v0.8.4 | MIT |
 | `go.yaml.in/yaml/v2` | v2.4.3 | Apache-2.0 |
 | `go.yaml.in/yaml/v3` | v3.0.4 | MIT |
-| `golang.org/x/net` | v0.47.0 | BSD-2-Clause or BSD-3-Clause |
+| `golang.org/x/net` | v0.55.0 | BSD-2-Clause or BSD-3-Clause |
 | `golang.org/x/oauth2` | v0.30.0 | BSD-2-Clause or BSD-3-Clause |
-| `golang.org/x/sync` | v0.19.0 | BSD-2-Clause or BSD-3-Clause |
-| `golang.org/x/sys` | v0.38.0 | BSD-2-Clause or BSD-3-Clause |
-| `golang.org/x/term` | v0.37.0 | BSD-2-Clause or BSD-3-Clause |
-| `golang.org/x/text` | v0.34.0 | BSD-2-Clause or BSD-3-Clause |
+| `golang.org/x/sync` | v0.21.0 | BSD-2-Clause or BSD-3-Clause |
+| `golang.org/x/sys` | v0.45.0 | BSD-2-Clause or BSD-3-Clause |
+| `golang.org/x/term` | v0.43.0 | BSD-2-Clause or BSD-3-Clause |
+| `golang.org/x/text` | v0.39.0 | BSD-2-Clause or BSD-3-Clause |
 | `golang.org/x/time` | v0.12.0 | BSD-2-Clause or BSD-3-Clause |
 | `google.golang.org/protobuf` | v1.36.8 | BSD-2-Clause or BSD-3-Clause |
 | `gopkg.in/evanphx/json-patch.v4` | v4.13.0 | BSD-2-Clause or BSD-3-Clause |

@@ -14,18 +14,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check required secrets
+        env:
+          CHARTS_REPO_TOKEN: ${{ secrets.CHARTS_REPO_TOKEN }}
         run: |
-          if [ -z "${{ secrets.CHARTS_REPO_TOKEN }}" ]; then
+          if [ -z "$CHARTS_REPO_TOKEN" ]; then
             echo "::error::CHARTS_REPO_TOKEN secret is not set. This secret is required to create PRs on the charts repository."
             echo "::error::Please add a Personal Access Token with 'repo' scope as CHARTS_REPO_TOKEN in repository secrets."
             exit 1
           fi
 
+      # The input reaches the script through env, never by expression
+      # interpolation into the script, and must be a plain semver before any
+      # later step sees it: some of them interpolate the step output.
       - name: Determine version
         id: version
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          VERSION="${{ github.event.inputs.version }}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          # [[ =~ ]] matches the whole value; grep would accept a
+          # multi-line input whose first line is a version.
+          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          if ! [[ "$VERSION" =~ $semver ]]; then
+            echo "::error::version must be a semver without the v prefix (e.g. 1.2.3), got: $VERSION"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION"
 
       - name: Checkout source repository
@@ -57,6 +70,8 @@ jobs:
 
       - name: Update Chart.yaml
         id: update-chart
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           cd charts
           CHART_NAME="cluster-vision"
@@ -69,7 +84,7 @@ jobs:
 
           CURRENT_CHART_VERSION=$(yq '.version' "$CHART_PATH")
           CURRENT_APP_VERSION=$(yq '.appVersion' "$CHART_PATH")
-          NEW_VERSION="${{ steps.version.outputs.version }}"
+          NEW_VERSION="$VERSION"
 
           echo "Current state:"
           echo "- Chart version: $CURRENT_CHART_VERSION"
@@ -90,13 +105,14 @@ jobs:
           cat "$CHART_PATH"
 
       - name: Update README.md Chart Table
+        env:
+          CHART_NAME: ${{ steps.update-chart.outputs.chart_name }}
+          CHART_VERSION: ${{ steps.update-chart.outputs.chart_version }}
+          APP_VERSION: ${{ steps.version.outputs.version }}
+          CHART_DESCRIPTION: ${{ steps.update-chart.outputs.chart_description }}
         run: |
           cd charts
           README_FILE="README.md"
-          CHART_NAME="${{ steps.update-chart.outputs.chart_name }}"
-          CHART_VERSION="${{ steps.update-chart.outputs.chart_version }}"
-          APP_VERSION="${{ steps.version.outputs.version }}"
-          CHART_DESCRIPTION="${{ steps.update-chart.outputs.chart_description }}"
 
           if [ -f "$README_FILE" ]; then
             if grep -q "\[${CHART_NAME}\]" "$README_FILE"; then
@@ -136,6 +152,8 @@ jobs:
             - `charts/${{ steps.update-chart.outputs.chart_name }}/` - Synced chart from source repository
             - `README.md` - Updated chart version and app version in charts table
 
+            Not auto-merged: review the rendered chart, then merge by hand.
+
             ### What's Changed
 
             See [release notes](https://github.com/${{ github.repository }}/releases/tag/v${{ steps.version.outputs.version }}) for details.
@@ -168,15 +186,3 @@ jobs:
             helm lint ./charts/${{ steps.update-chart.outputs.chart_name }}
             helm install test-release ./charts/${{ steps.update-chart.outputs.chart_name }} --dry-run --debug
             ```
-
-      - name: Enable auto-merge
-        if: steps.create-pr.outputs.pull-request-number
-        continue-on-error: true
-        run: |
-          sleep 5
-          gh pr merge ${{ steps.create-pr.outputs.pull-request-number }} \
-            --repo fredericrous/charts \
-            --auto \
-            --squash
-        env:
-          GH_TOKEN: ${{ secrets.CHARTS_REPO_TOKEN }}

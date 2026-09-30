@@ -1,3 +1,6 @@
+import { data } from "react-router";
+import type { RouteErrorBody } from "./lib/route-error";
+
 const API_URL = process.env.API_URL || "http://localhost:8080";
 
 export interface DiagramResult {
@@ -72,6 +75,9 @@ export interface DiagramDiff {
 
 export interface CompareLink {
   cluster: string;
+  /** Root kustomization the link is for. The API emits one link per changed
+   *  root kustomization; older APIs omit this field. */
+  kustomization?: string;
   from_sha: string;
   to_sha: string;
   url: string;
@@ -138,12 +144,44 @@ export class ApiError extends Error {
  *  so compare mode shows the "after" state, not a mix of live and past. */
 export async function fetchDiagrams(request?: Request): Promise<DiagramsResponse> {
   const { after } = compareParams(request);
-  if (after !== "now") {
-    return getJSON<DiagramsResponse>(
-      `/api/snapshots/${encodeURIComponent(after)}/diagrams`
-    );
+  try {
+    if (after !== "now") {
+      return await getJSON<DiagramsResponse>(
+        `/api/snapshots/${encodeURIComponent(after)}/diagrams`
+      );
+    }
+    return await getJSON<DiagramsResponse>("/api/diagrams");
+  } catch (e) {
+    throw toRouteError(e);
   }
-  return getJSON<DiagramsResponse>("/api/diagrams");
+}
+
+/** Turn an API failure into a thrown route response, so a route's
+ *  ErrorBoundary sees its status (503 while the first sync runs, 404 for an
+ *  unknown snapshot). A plain Error thrown from a loader reaches the browser
+ *  as a bare "Unexpected Server Error" 500 in production. */
+export function toRouteError(e: unknown) {
+  if (e instanceof ApiError) {
+    // Only the API's own message goes in the body; without one the error
+    // boundary words the status itself ("API error: 404 Not Found" is not
+    // something to show a user), and statusText keeps the raw line.
+    const body: RouteErrorBody = e.detail ? { error: e.detail } : {};
+    if (e.status === 404) body.kind = "snapshot";
+    return data(body, { status: e.status, statusText: e.message });
+  }
+  const reason = e instanceof Error ? e.message : String(e);
+  return data<RouteErrorBody>(
+    { error: `Could not reach the Cluster Vision API: ${reason}` },
+    { status: 502 }
+  );
+}
+
+/** A 404 route response for a diagram the (live or stored) state lacks. */
+export function diagramNotFound(id: string) {
+  return data<RouteErrorBody>(
+    { error: `Diagram "${id}" not found`, kind: "diagram" },
+    { status: 404 }
+  );
 }
 
 export async function fetchDiagram(
@@ -153,7 +191,7 @@ export async function fetchDiagram(
   const data = await fetchDiagrams(request);
   const diagram = data.diagrams.find((d) => d.id === id);
   if (!diagram) {
-    throw new Error(`Diagram "${id}" not found`);
+    throw diagramNotFound(id);
   }
   return { diagram, generatedAt: data.generated_at };
 }

@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/fredericrous/cluster-vision/internal/model"
@@ -20,6 +21,11 @@ type DiscoveredApp struct {
 	Images       []string
 	VulnCritical int
 	VulnHigh     int
+
+	// LegacyNamespace is where an earlier version recorded this app's
+	// k8s_source: the HelmRelease object's namespace, when it differs
+	// from the namespace the release deploys to. Sync moves that row.
+	LegacyNamespace string
 }
 
 // MapClusterData extracts EAM entities from parsed ClusterData.
@@ -45,17 +51,19 @@ func mapHelmReleases(data *model.ClusterData) []DiscoveredApp {
 		chartVersion := hr.Version
 		helmRelease := hr.Name
 
-		// Collect images for this helm release's namespace
-		images := collectImagesForNamespace(data.Pods, hr.Namespace, hr.Cluster)
-
+		legacyNS := ""
+		if hr.DeployNamespace() != hr.Namespace {
+			legacyNS = hr.Namespace
+		}
 		apps = append(apps, DiscoveredApp{
-			Name:         name,
-			Namespace:    hr.Namespace,
-			Cluster:      hr.Cluster,
-			HelmRelease:  &helmRelease,
-			ChartName:    &chartName,
-			ChartVersion: &chartVersion,
-			Images:       images,
+			Name:            name,
+			Namespace:       hr.DeployNamespace(),
+			Cluster:         hr.Cluster,
+			HelmRelease:     &helmRelease,
+			ChartName:       &chartName,
+			ChartVersion:    &chartVersion,
+			Images:          hr.Images(data.Workloads),
+			LegacyNamespace: legacyNS,
 		})
 	}
 	return apps
@@ -98,8 +106,16 @@ func mapStandaloneWorkloads(data *model.ClusterData, helmApps []DiscoveredApp) [
 		g.images = append(g.images, w.Images...)
 	}
 
+	// Group keys in order: map order would shuffle the apps on every sync.
+	groupKeys := make([]string, 0, len(groups))
+	for k := range groups {
+		groupKeys = append(groupKeys, k)
+	}
+	sort.Strings(groupKeys)
+
 	var apps []DiscoveredApp
-	for _, g := range groups {
+	for _, k := range groupKeys {
+		g := groups[k]
 		wlName := g.name
 		wlKind := g.kind
 		apps = append(apps, DiscoveredApp{
@@ -115,33 +131,15 @@ func mapStandaloneWorkloads(data *model.ClusterData, helmApps []DiscoveredApp) [
 }
 
 func enrichWithVulns(apps []DiscoveredApp, vulns []model.ImageVuln) {
-	vulnMap := make(map[string]*model.ImageVuln)
-	for i := range vulns {
-		vulnMap[vulns[i].Image] = &vulns[i]
-	}
-
+	idx := model.NewVulnIndex(vulns)
 	for i := range apps {
 		for _, img := range apps[i].Images {
-			if v, ok := vulnMap[img]; ok {
+			if v, ok := idx.Lookup(apps[i].Cluster, img); ok {
 				apps[i].VulnCritical += v.Critical
 				apps[i].VulnHigh += v.High
 			}
 		}
 	}
-}
-
-func collectImagesForNamespace(pods []model.PodImageInfo, namespace, cluster string) []string {
-	seen := make(map[string]bool)
-	var images []string
-	for _, p := range pods {
-		if p.Namespace == namespace {
-			if !seen[p.Image] {
-				seen[p.Image] = true
-				images = append(images, p.Image)
-			}
-		}
-	}
-	return images
 }
 
 // BuildK8sSource creates a K8sSource from a DiscoveredApp.
@@ -171,14 +169,24 @@ func dedup(ss []string) []string {
 	return result
 }
 
-// PrimaryImageTag extracts the main image tag from a list of images.
+// PrimaryImageTag extracts the tag of the first image: its digest when it
+// is pinned by digest alone, nil when it names no tag at all (an implicit
+// "latest" is not recorded as one). The tag separator is the last ":"
+// after the last "/", so a registry port is never taken for a tag.
 func PrimaryImageTag(images []string) *string {
 	if len(images) == 0 {
 		return nil
 	}
-	parts := strings.SplitN(images[0], ":", 2)
-	if len(parts) == 2 {
-		return &parts[1]
+	ref := images[0]
+	_, _, tag, digest := model.SplitImageRef(ref)
+	if tag == "" {
+		if digest == "" {
+			return nil
+		}
+		return &digest
 	}
-	return nil
+	if name, _, _ := strings.Cut(ref, "@"); !strings.HasSuffix(name, ":"+tag) {
+		return nil // SplitImageRef's implicit "latest"
+	}
+	return &tag
 }

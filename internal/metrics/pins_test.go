@@ -38,7 +38,7 @@ func TestEmitImagePinMetrics(t *testing.T) {
 		return "", false
 	}
 
-	EmitImagePinMetrics(pods, lookup)
+	EmitImagePinMetrics(pods, lookup, nil)
 
 	if n := testutil.CollectAndCount(ImageUnpinned); n != 2 {
 		t.Fatalf("unpinned series = %d, want 2 (seerr, radarr)", n)
@@ -61,7 +61,7 @@ func TestEmitImagePinMetrics(t *testing.T) {
 
 	// A refresh with the seerr image now pinned drops its series.
 	pods[0].Image, pods[5].Image = "ghcr.io/seerr-team/seerr:v3.4.1@"+pinnedNow, "ghcr.io/seerr-team/seerr:v3.4.1@"+pinnedNow
-	EmitImagePinMetrics(pods, lookup)
+	EmitImagePinMetrics(pods, lookup, nil)
 	if n := testutil.CollectAndCount(ImageUnpinned); n != 1 {
 		t.Fatalf("after repin: unpinned series = %d, want 1", n)
 	}
@@ -74,7 +74,7 @@ func TestEmitImagePinMetricsWithoutLookup(t *testing.T) {
 	pods := []model.PodImageInfo{
 		{Cluster: "c", Namespace: "n", PodName: "p", Image: "ghcr.io/x/y:1", ImageID: "ghcr.io/x/y@sha256:" + hex('d')},
 	}
-	EmitImagePinMetrics(pods, nil)
+	EmitImagePinMetrics(pods, nil, nil)
 	if n := testutil.CollectAndCount(ImageUnpinned); n != 1 {
 		t.Fatalf("unpinned = %d", n)
 	}

@@ -53,6 +53,9 @@ func (db *DB) ListComponents(ctx context.Context, componentType string) ([]ITCom
 		}
 		components = append(components, c)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("ListComponents: iterating rows: %w", err)
+	}
 	return components, nil
 }
 
