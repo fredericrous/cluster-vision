@@ -10,12 +10,12 @@
   display: flex;
   flex-direction: column;
   gap: var(--duro-spacing-lg);
-  height: calc(100vh - 4rem);
+  height: calc(100vh - 2 * var(--duro-spacing-xl));
 }
 
 .content {
   background: var(--duro-color-bg-card);
-  border: 1px solid var(--duro-color-border);
+  border: var(--duro-border-hairline) solid var(--duro-color-border);
   border-radius: var(--duro-radius-sm);
   padding: var(--duro-spacing-lg);
 }
@@ -24,7 +24,7 @@
   flex: 1;
   min-height: 0;
   background: var(--duro-color-bg-card);
-  border: 1px solid var(--duro-color-border);
+  border: var(--duro-border-hairline) solid var(--duro-color-border);
   border-radius: var(--duro-radius-sm);
   position: relative;
 }
@@ -33,6 +33,8 @@
    the primary artifact on small screens, so it stacks first there. */
 .compareLayout {
   display: grid;
+  /* holds-until: @duro-app/tokens ships a 320px panel size token, or this
+     moves to Grid layout="split" (DS gap, cluster-vision PR follow-ups) */
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: var(--duro-spacing-md);
   flex: 1;
@@ -53,13 +55,15 @@
 
 .comparePanel {
   background: var(--duro-color-bg-card);
-  border: 1px solid var(--duro-color-border);
+  border: var(--duro-border-hairline) solid var(--duro-color-border);
   border-radius: var(--duro-radius-sm);
   padding: var(--duro-spacing-md);
   overflow-y: auto;
   max-height: calc(100vh - 8rem);
 }
 
+/* holds-until: this collapse moves onto a Duro breakpoint (md 768 / lg 1024)
+   or Grid layout="split" (DS gap, cluster-vision PR follow-ups) */
 @media (max-width: 900px) {
   .compareLayout {
     grid-template-columns: minmax(0, 1fr);

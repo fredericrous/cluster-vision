@@ -251,7 +251,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         </>
       )}
       <Separator />
-      <Grid minColumnWidth="280px" gap="md">
+      <Grid minColumnWidth="gridColMd" gap="md">
         {cards.map((card) => (
           <Link to={card.to} key={card.id} style={{ textDecoration: "none" }}>
             <Card variant="interactive" header={card.title}>

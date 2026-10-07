@@ -54,7 +54,16 @@ MCP server: `claude mcp add duro -- npx -y -p @duro-app/cli -p @modelcontextprot
 
 Lint: `@duro-app/eslint-plugin` (`duro.configs.recommended`) enforces the
 critical rules (html.* elements, deep token imports, no deprecated Table
-parts; warns on raw px/hex with token equivalents). Run `npm run lint` in `web/`.
+parts, and — an error since 3.0 — raw design values: off-scale spacing, radii,
+sizes, border widths, font sizes, durations, colours). Run `npm run lint` in `web/`.
+
+Every measure is a token (ADR-0027, Duro 5.0): measure props take `sizes` keys
+(`<Grid minColumnWidth="gridColMd">`, Table tracks like
+`'minmax(gridColSm, 1fr)'`; a px string is a type error), and CSS modules use
+`var(--duro-size-*)`, `var(--duro-border-*)`, `var(--duro-spacing-*)`,
+`var(--duro-radius-*)`. ESLint does not read the CSS modules, so nothing
+checks them for you: `npx @duro-app/cli sizes` (or `spacing`, `borders`,
+`radii`) lists the scale.
 
 v1 notes: Icon/StatusIcon `size` is a token (`sm|md|lg|xl|xxl` = 16/18/24/36/48px);
 Dialog/Drawer/DetailPanel `closeAnimationDuration` is a motion token
@@ -111,7 +120,7 @@ plus its PostCSS plugin into `web/vite.config.ts` first.
 `@duro-app/ui/table` (the TanStack-aware subpath). Per-column knobs go through
 `columnDef.meta`:
 
-- `meta.width` — a `grid-template-columns` track, e.g. `'minmax(200px, 400px)'`
+- `meta.width` — a `grid-template-columns` track in size tokens, e.g. `'minmax(gridColSm, dialogSm)'`
 - `meta.truncate` — clip the cell to one line with an ellipsis
 
 Column headers are sortable via a link-style `Button` (Duro's `Table.HeaderCell`

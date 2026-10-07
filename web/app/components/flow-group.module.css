@@ -1,17 +1,17 @@
 .group {
   width: 100%;
   height: 100%;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--duro-radius-sm);
+  border: var(--duro-border-hairline) solid rgba(255, 255, 255, 0.06);
   background: rgba(100, 116, 139, 0.04);
-  border-left: 3px solid rgba(100, 116, 139, 0.3);
+  border-left: var(--duro-border-accent) solid rgba(100, 116, 139, 0.3);
   position: relative;
 }
 
 .label {
   position: absolute;
-  top: 8px;
-  left: 12px;
+  top: var(--duro-spacing-sm);
+  left: var(--duro-spacing-ms);
   font-size: 0.65rem;
   font-weight: 500;
   color: rgba(148, 163, 184, 0.6);
