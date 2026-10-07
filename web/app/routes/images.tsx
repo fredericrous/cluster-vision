@@ -104,6 +104,10 @@ const columns: ColumnDef<ImageRow, string>[] = [
   {
     accessorKey: "namespaces",
     header: "Namespaces",
+    // Was minmax(200px, 400px). Duro has no 200px column token; gridColSm
+    // (240px) is the column-width token, so the minimum grows 40px.
+    // holds-until: @duro-app/tokens ships a narrower column-width size token
+    // (DS gap, cluster-vision PR follow-ups).
     meta: { width: "minmax(gridColSm, dialogSm)" },
   },
   { accessorKey: "pods", header: "Pods" },

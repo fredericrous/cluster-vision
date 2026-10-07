@@ -4,6 +4,7 @@
 }
 
 .sidebar {
+  /* holds-until: @duro-app/tokens ships a sidebar-width size token (DS gap, cluster-vision PR follow-ups) */
   width: 220px;
   background: var(--duro-color-bg-card);
   border-right: var(--duro-border-hairline) solid var(--duro-color-border);

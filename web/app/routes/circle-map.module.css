@@ -1,6 +1,8 @@
 /* Sized host for the d3-hierarchy SVG scene. */
 .circleMapContainer {
   width: 100%;
+  /* holds-until: @duro-app/tokens ships size tokens for a page-header offset
+     and a diagram minimum height (DS gap, cluster-vision PR follow-ups) */
   height: calc(100vh - 160px);
   min-height: 500px;
 }

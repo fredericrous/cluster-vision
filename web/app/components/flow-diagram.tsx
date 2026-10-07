@@ -48,6 +48,9 @@ const MIN_NODE_W = 120;
 const MAX_NODE_W = 300;
 // Horizontal padding (spacing.ms 12px * 2) + border (borders.hairline 1px * 2)
 // + cluster accent (borders.accent 3px), as flow-node.module.css draws them.
+// holds-until: web/ declares @duro-app/tokens and computes this from its raw px
+// maps (SPACING_PX.ms * 2 + BORDERS_PX.hairline * 2 + BORDERS_PX.accent); until
+// then a change to those tokens must be mirrored here.
 const NODE_PAD = 29;
 
 // Cluster display order WITHIN a row.
