@@ -41,8 +41,8 @@
 }
 
 .container :global(.react-flow__handle) {
-  width: 6px;
-  height: 6px;
+  width: var(--duro-size-indicator-dot);
+  height: var(--duro-size-indicator-dot);
   background: var(--text-muted);
   border: none;
 }
@@ -72,7 +72,7 @@
 .legendSwatch {
   width: var(--duro-size-glyph-xs);
   height: var(--duro-size-glyph-xs);
-  border-radius: 2px;
+  border-radius: var(--duro-radius-xs);
 }
 
 

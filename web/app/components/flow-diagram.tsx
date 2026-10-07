@@ -46,8 +46,9 @@ const PAD_BOTTOM = 16;
 const CLUSTER_GAP = 60;
 const MIN_NODE_W = 120;
 const MAX_NODE_W = 300;
-// Horizontal padding (14px * 2) + border (1px * 2) + cluster accent (3px)
-const NODE_PAD = 33;
+// Horizontal padding (spacing.ms 12px * 2) + border (borders.hairline 1px * 2)
+// + cluster accent (borders.accent 3px), as flow-node.module.css draws them.
+const NODE_PAD = 29;
 
 // Cluster display order WITHIN a row.
 const CLUSTER_ORDER: Record<string, number> = { NAS: 0, Homelab: 1, Monitor: 2 };

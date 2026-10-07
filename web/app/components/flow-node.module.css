@@ -1,7 +1,7 @@
 .node {
   height: var(--duro-size-touch-target);
   box-sizing: border-box;
-  padding: 8px 14px;
+  padding: var(--duro-spacing-sm) var(--duro-spacing-ms);
   border-radius: var(--duro-radius-px6);
   font-size: 0.8rem;
   font-weight: 500;
