@@ -104,7 +104,7 @@ const columns: ColumnDef<ImageRow, string>[] = [
   {
     accessorKey: "namespaces",
     header: "Namespaces",
-    meta: { width: "minmax(200px, 400px)" },
+    meta: { width: "minmax(gridColSm, dialogSm)" },
   },
   { accessorKey: "pods", header: "Pods" },
 ];

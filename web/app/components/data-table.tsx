@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type ComponentProps, useMemo, useState } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -30,8 +30,9 @@ declare module "@tanstack/react-table" {
   // `^_` escape the unused-vars rule offers is not available.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface ColumnMeta<TData, TValue> {
-    /** grid-template-columns track for this column, e.g. 'minmax(200px, 400px)'. */
-    width?: string;
+    /** grid-template-columns track for this column, in Duro size tokens,
+     *  e.g. 'minmax(gridColSm, 1fr)'. */
+    width?: ComponentProps<typeof Table.HeaderCell>["width"];
     /** Clip overflowing cell text to a single line with an ellipsis. */
     truncate?: boolean;
   }
