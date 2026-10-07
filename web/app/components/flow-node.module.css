@@ -1,12 +1,12 @@
 .node {
-  height: 44px;
+  height: var(--duro-size-touch-target);
   box-sizing: border-box;
   padding: 8px 14px;
-  border-radius: 6px;
+  border-radius: var(--duro-radius-px6);
   font-size: 0.8rem;
   font-weight: 500;
   color: #e2e8f0;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: var(--duro-border-hairline) solid rgba(255, 255, 255, 0.12);
   position: relative;
   display: flex;
   align-items: center;
@@ -16,11 +16,11 @@
 
 /* Cluster left border accent */
 .clusterHomelab {
-  border-left: 3px solid #6366f1;
+  border-left: var(--duro-border-accent) solid #6366f1;
 }
 
 .clusterNAS {
-  border-left: 3px solid #14b8a6;
+  border-left: var(--duro-border-accent) solid #14b8a6;
 }
 
 /* Compare mode */
@@ -29,24 +29,24 @@
 }
 
 .diffAdded {
-  border: 2px solid var(--duro-color-success, #22c55e) !important;
+  border: var(--duro-border-strong) solid var(--duro-color-success, #22c55e) !important;
   background: color-mix(in srgb, var(--duro-color-success, #22c55e) 25%, transparent) !important;
 }
 
 .diffRemoved {
-  border: 2px dotted var(--duro-color-error, #ef4444) !important;
+  border: var(--duro-border-strong) dotted var(--duro-color-error, #ef4444) !important;
   background: color-mix(in srgb, var(--duro-color-error, #ef4444) 20%, transparent) !important;
   opacity: 0.75;
   text-decoration: line-through;
 }
 
 .diffChanged {
-  border: 2px dashed var(--duro-color-warning, #f59e0b) !important;
+  border: var(--duro-border-strong) dashed var(--duro-color-warning, #f59e0b) !important;
   background: color-mix(in srgb, var(--duro-color-warning, #f59e0b) 25%, transparent) !important;
 }
 
 .glyph {
   font-weight: 700;
-  margin-right: 6px;
+  margin-right: var(--duro-micro-spacing-px6);
   font-family: ui-monospace, monospace;
 }

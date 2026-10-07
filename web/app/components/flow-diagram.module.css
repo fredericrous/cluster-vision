@@ -10,13 +10,13 @@
 
 .container :global(.react-flow__controls) {
   background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: var(--duro-border-hairline) solid var(--border);
+  border-radius: var(--duro-radius-px6);
 }
 
 .container :global(.react-flow__controls-button) {
   background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--duro-border-hairline) solid var(--border);
   fill: var(--text-secondary);
 }
 
@@ -26,8 +26,8 @@
 
 .container :global(.react-flow__minimap) {
   background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: var(--duro-border-hairline) solid var(--border);
+  border-radius: var(--duro-radius-px6);
 }
 
 .container :global(.react-flow__edge-path) {
@@ -49,14 +49,14 @@
 
 .legend {
   position: absolute;
-  bottom: 12px;
-  left: 12px;
+  bottom: var(--duro-spacing-ms);
+  left: var(--duro-spacing-ms);
   display: flex;
-  gap: 12px;
-  padding: 8px 12px;
+  gap: var(--duro-spacing-ms);
+  padding: var(--duro-spacing-sm) var(--duro-spacing-ms);
   background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: var(--duro-border-hairline) solid var(--border);
+  border-radius: var(--duro-radius-px6);
   font-size: 0.7rem;
   color: var(--text-secondary);
   z-index: 5;
@@ -66,12 +66,12 @@
 .legendItem {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--duro-spacing-xs);
 }
 
 .legendSwatch {
-  width: 10px;
-  height: 10px;
+  width: var(--duro-size-glyph-xs);
+  height: var(--duro-size-glyph-xs);
   border-radius: 2px;
 }
 
