@@ -1,5 +1,5 @@
 # Stage 1: Build Go API binary
-FROM golang:1.25-alpine AS go-builder
+FROM golang:1.26.11-alpine AS go-builder
 
 WORKDIR /src
 
@@ -33,6 +33,7 @@ LABEL org.opencontainers.image.title="cluster-vision" \
       org.opencontainers.image.licenses="LicenseRef-BUSL-1.1" \
       org.opencontainers.image.vendor="Frederic Rous"
 
+# hadolint ignore=DL3018
 RUN apk add --no-cache tini
 
 WORKDIR /app
@@ -51,6 +52,7 @@ EXPOSE 3000 8080
 
 # The base image's unprivileged user (uid/gid 1000). Neither server writes
 # outside /tmp, so the image also runs with a read-only root filesystem.
+# hadolint ignore=DL3066
 USER node
 
 # tini -g delivers SIGTERM to the whole process group, so both servers shut
