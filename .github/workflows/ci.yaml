@@ -62,7 +62,7 @@ jobs:
       # binaries (amont, amont-agent, aval, relais) keep the strict default.
       - name: Attestation check
         id: attest
-        uses: fredericrous/attest@v1
+        uses: greenharness/greensummit@v2
         with:
           platform: any
 
@@ -112,7 +112,7 @@ jobs:
 
       - name: Attestation check
         id: attest
-        uses: fredericrous/attest@v1
+        uses: greenharness/greensummit@v2
         with:
           platform: any
 
