@@ -1,5 +1,5 @@
 ---
-status: active
+status: done
 branch: chore/greenrack
 repos: [cluster-vision, homelab, decisions]
 adrs: [ADR-0075, ADR-0076]
@@ -278,7 +278,7 @@ lint` and `npm run test:run`, with the lint warning count and the test count. Sa
   - Before opening the PR, read the repository's allowed merge methods (`gh repo view --json mergeCommitAllowed,rebaseMergeAllowed`); if only squash is allowed, drop the bisect claim and say so in the PR. The PR merges with a merge commit or a rebase, never a squash, so commits
     1–3 stay bisectable. CI's `image` smoke job must conclude `success` (not
     skipped).
-- [ ] Phase 4: release v0.26.0, after the merge.
+- [x] Phase 4: release v0.26.0, after the merge.
   - Before tagging, `git log --oneline v0.25.6..origin/main` lists only the
     sweep PR's commits and `chore: bump chart to … [skip ci]` commits. Anything
     else is named in the PR, and the single-change claim is dropped.
@@ -297,7 +297,7 @@ lint` and `npm run test:run`, with the lint warning count and the test count. Sa
       `@duro-app` and no `--duro-`;
     - the `--gr-` vars resolve, with 0 undefined `var()`.
   - Rollback: revert the homelab PR with `merge-when-green`, then run the same source, kustomization and helmrelease reconcile chain, back to 0.25.6. Upgrade remediation (retries 3) already rolls a failed upgrade back by itself. v0.26.0 adds no migration: before tagging, `git diff --stat v0.25.6..origin/main -- internal cmd mcp chart` shows nothing but `chart/cluster-vision/Chart.yaml`, and Postgres data written under 0.26.0 is read unchanged by 0.25.6.
-- [ ] Phase 5: the programme record, in the decisions worktree
+- [x] Phase 5: the programme record, in the decisions worktree
       `decisions-wt-greenrack-t08-clv`, with one PR.
   - `t08-fleet-sweep.md`'s cluster-vision entry becomes "merged, released and
     live". It records the hook count and what differed: npm with legacy peers,
@@ -322,8 +322,8 @@ lint` and `npm run test:run`, with the lint warning count and the test count. Sa
 | `browser-check` (haiku) on the production build over the frozen API, after each commit, against the previous one: 23 routes plus the API-down `/topology` error state at 1280 and 390, diagram node counts and sizes, sidebar/surface/flow-node computed styles, SideNav item and sort-button hover and focus-visible | no measured difference except the 5.45 coarse-pointer change at c1, recorded in the PR; flow-node height equals `NODE_H` (44) under touch emulation, no overlapping node boxes; no new console error; 0 undefined `var()` | 25 captures × 2 widths per build (configs-390 too tall to screenshot at every build; its JSON compared). c1 vs baseline: the DS 5.45 SideNav opens the current page's group and marks the page (sidebar 248 → 277–335px tall, Tab order gains that item), accepted by the person at commit 1; at 390 buttons are 44px (Retry 28 → 44px); table pages 2px taller at 1280; diagrams identical (topology, network, security mermaid sizes; flow 175 nodes, 181 edges, computed node height 44px = `NODE_H`, bbox overlap count 152 as baseline). c2 and c3 pixel-equal to the previous commit except ≤51px react-flow edge noise. Compare mode: Before/After Selects open 52 options, keyboard selection returns focus, 540 changes. Console: only the intended 404 and 502. Undefined `var()`: 0 outside @xyflow's optional `--xy-*` (48 at every commit); c3 CSS references 52 `--gr-*`, 0 `--duro-` |
 | `sweep-app.sh --check --allow <file> <wt>` | exit 0 | exit 0 (counts before the rewrite: npm-name 52, css-var 99, eslint-rule 3, others 0) |
 | hook entries in `.claude/settings.json` | one greenrack entry per event, plus `aval-heads` | SessionStart `greenrack-catalog.sh` + `aval-heads.sh`; UserPromptSubmit `greenrack-plan.sh`; `duro-*.sh` removed by the installer; hooks hold no `@duro-app`; after one hook run `git status --porcelain .claude` shows only the intended changes (new cache glob `.greenrack-session.cache*` ignored) |
-| PR CI: `image` smoke job `conclusion` | success | |
-| Phase 4 cluster: HelmRelease; pod after 30 min; refresh and EAM sync; `@duro-app` / `--duro-` count in served assets | Ready at 0.26.0, 0 restarts; complete refresh, 0 EAM errors; both counts 0 | |
+| PR CI: `image` smoke job `conclusion` | success | Image smoke test success on PR #66 (run 44582227950); MCP and migration-check jobs path-filtered (skipped) |
+| Phase 4 cluster: HelmRelease; pod after 30 min; refresh and EAM sync; `@duro-app` / `--duro-` count in served assets | Ready at 0.26.0, 0 restarts; complete refresh, 0 EAM errors; both counts 0 | v0.26.0 = b591e72 (`git log v0.25.6..v0.26.0`: the sweep PR and the 0.25.6 chart bump only; `git diff --stat` outside web/: `chart/cluster-vision/Chart.yaml` only); Release success (run 44583200783); charts#537 merged (Chart.yaml +2 −2, README); chart and image 0.26.0 resolve through the zot mirror; homelab#1249 merged; HelmRelease `UpgradeSucceeded`, history 0.26.0 deployed / 0.25.6 superseded; at 18:53Z one pod on 0.26.0, Ready, 0 restarts (started 18:22:04Z); four refreshes complete (`partial=false`), three EAM syncs with 0 errors, no ERROR line; served assets (17 files): `@duro-app` 0, `--duro-` 0, 43 `--gr-*`, none undefined |
 
 ## Implementation review
 
@@ -341,5 +341,7 @@ lint` and `npm run test:run`, with the lint warning count and the test count. Sa
 - 2026-11-19 — Commit 1 (DS 5.45): besides the 44px touch buttons at 390, the SideNav changed. 5.1 kept every group closed and marked no page; 5.45 opens the current page's group and marks the page with the accent bar. The person accepted it as the DS's change; later commits compare against c1.
 - 2026-11-19 — `@aval-adr/eslint-config` ^0.17.0 is a direct devDependency from c2: web/.npmrc sets `legacy-peer-deps=true`, so the DS 6 config's peer would never be installed. It was already in the tree at 0.6.0 through eslint-config 5.45. The other three manifest entries (`@greenharness/greenrack-ui`, `-eslint-config`, `-eslint-plugin` ^7.0.1) are renames of the `@duro-app` packages the app already owned, continuing their version line (ADR-0076): no new dependency, the same owners. Ownership of `@aval-adr/eslint-config` (the PR body carries it, `package.json` cannot): dev-only (lint), no install script; it pulls `@eslint/js`, `@effect/eslint-plugin`, `eslint-config-prettier` and `@eslint-community/eslint-plugin-eslint-comments`, the first three already in the tree through the DS 5.x config; published by the fleet's own adr-lint (greenspotter) repository, 8 releases from 2026-10-30 to 11-08; if abandoned, the same rules ship as `@greenharness/greenspotter-eslint-config` (ADR-0076), and a stale copy only stops lint updates, never the build or the image.
 - 2026-11-19 — Implementation review: the generated `greenrack-catalog.sh` findings (temp-file race, silent first-run failure, no timeout on npx, floating `@^7`) are greenrack's: the file is generated and says not to hand-edit it. The race is f08; the rest go to the inbox as greenrack follow-ups. The exact doctor pin was already rejected at plan review (fleet runs `@^7`).
+
+- 2026-11-19 — Phase 4 done: v0.26.0 live from 18:22Z (homelab#1249), checked at 18:53Z. A `flux reconcile helmrelease` alone kept 0.25.6; the OCI source → kustomization → HelmRelease chain picked up the pin. The full `npm audit` lists 8 dev-only findings, the same as main; the tag land counted them as dev-only, not blocking. The Go audit still does not run (f42). Phase 5: decisions#274 (t08 progress, map handoff, follow-ups f64–f66, f08 extended).
 
 <!-- panel: repos=cluster-vision,homelab,decisions adds= reviewers=backend,lang:typescript,platform,react,tui,ui-design,unix,codex body-sha=b3691aabaaf4 -->
