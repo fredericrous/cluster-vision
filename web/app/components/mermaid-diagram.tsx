@@ -8,7 +8,12 @@ interface MermaidDiagramProps {
   id: string;
 }
 
+// mermaid 12 moved the defaults to the ELK layout, the "neo" look and a
+// 120px label wrap, which grid a subgraph's unlinked nodes, add shadows and
+// break labels sooner. Pin the mermaid 11 values these diagrams were drawn for.
 const config: MermaidConfig = {
+  layout: "dagre",
+  look: "classic",
   theme: "dark",
   themeVariables: {
     darkMode: true,
@@ -28,6 +33,8 @@ const config: MermaidConfig = {
     edgeLabelBackground: "#1e293b",
   },
   flowchart: {
+    look: "classic",
+    wrappingWidth: 200,
     htmlLabels: true,
     curve: "basis",
   },
