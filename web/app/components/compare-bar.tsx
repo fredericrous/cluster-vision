@@ -9,7 +9,7 @@ import {
   Select,
   Stack,
   Text,
-} from "@duro-app/ui";
+} from "@greenharness/greenrack-ui";
 import {
   compareLinkKey,
   compareLinkLabel,

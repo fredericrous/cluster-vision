@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { Route } from "./+types/circle-map";
 import { fetchDiagram } from "../api.server";
 import { pack, hierarchy } from "d3-hierarchy";
-import { Cluster, Heading, Inline, Stack, Text } from "@duro-app/ui";
+import { Cluster, Heading, Inline, Stack, Text } from "@greenharness/greenrack-ui";
 import styles from "./circle-map.module.css";
 
 export function meta(_: Route.MetaArgs) {
@@ -116,7 +116,7 @@ export default function CircleMap({ loaderData }: Route.ComponentProps) {
 
       {/* Raw div/svg: d3-hierarchy drives an SVG scene graph, which
           react-strict-dom has no primitives for (SVG subtrees are exempt from
-          duro/no-raw-html-element; the sized host div is allow-listed for this
+          greenrack/no-raw-html-element; the sized host div is allow-listed for this
           file in eslint.config.js). */}
       <div className={styles.circleMapContainer}>
         <svg className={styles.circleMapSvg} viewBox={`0 0 ${width} ${height}`}>

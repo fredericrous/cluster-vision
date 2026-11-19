@@ -1,4 +1,4 @@
-import { Callout, Stack, Text } from "@duro-app/ui";
+import { Callout, Stack, Text } from "@greenharness/greenrack-ui";
 import type { MermaidConfig } from "mermaid";
 import { useMermaid } from "../lib/use-mermaid";
 import styles from "./mermaid-diagram.module.css";
@@ -55,7 +55,7 @@ export function MermaidDiagram({ content, id }: MermaidDiagramProps) {
           <Stack gap="sm">
             <Text>Failed to render diagram</Text>
             <pre>{error}</pre>
-            {/* <details>/<summary> is a native disclosure with no Duro
+            {/* <details>/<summary> is a native disclosure with no greenrack
                 equivalent — allow-listed for this file in eslint.config.js. */}
             <details>
               <summary>Raw Mermaid source</summary>

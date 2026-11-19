@@ -1,4 +1,4 @@
-import { Alert, Badge, Stack, Table } from "@duro-app/ui";
+import { Alert, Badge, Stack, Table } from "@greenharness/greenrack-ui";
 import type { MermaidConfig } from "mermaid";
 import { useMermaid } from "../lib/use-mermaid";
 import styles from "./markdown-table.module.css";

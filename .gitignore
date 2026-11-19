@@ -41,3 +41,6 @@ npm-debug.log*
 
 # Local tool binaries (make lint downloads golangci-lint here)
 /bin/
+
+# greenrack session-hook cache (greenrack hook install)
+.claude/.greenrack-session.cache*

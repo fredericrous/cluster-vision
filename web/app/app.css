@@ -1,25 +1,25 @@
-/* App-local aliases onto the Duro token custom properties published by
-   @duro-app/ui's stylesheet (`--duro-<group>-<token>`). Going through Duro's
+/* App-local aliases onto the greenrack token custom properties published by
+   @greenharness/greenrack-ui's stylesheet (`--gr-<group>-<token>`). Going through greenrack's
    properties keeps this app's own CSS on the same palette as its components,
    and makes it follow the active ThemeProvider theme. */
 :root {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --bg-primary: var(--duro-color-bg);
-  --bg-secondary: var(--duro-color-bg-card);
-  --bg-tertiary: var(--duro-color-bg-card-hover);
-  --text-primary: var(--duro-color-text);
-  --text-secondary: var(--duro-color-text-muted);
-  --text-muted: var(--duro-color-text-muted);
-  --accent: var(--duro-color-accent);
-  --accent-hover: var(--duro-color-accent-hover);
-  --accent-dim: var(--duro-color-info-bg);
-  --border: var(--duro-color-border);
-  --success: var(--duro-color-success);
-  --success-dim: var(--duro-color-success-bg);
-  --danger: var(--duro-color-error);
-  --danger-dim: var(--duro-color-error-bg);
-  --muted-dim: var(--duro-color-bg-card-hover);
-  --radius: var(--duro-radius-sm);
+  --bg-primary: var(--gr-color-bg);
+  --bg-secondary: var(--gr-color-bg-card);
+  --bg-tertiary: var(--gr-color-bg-card-hover);
+  --text-primary: var(--gr-color-text);
+  --text-secondary: var(--gr-color-text-muted);
+  --text-muted: var(--gr-color-text-muted);
+  --accent: var(--gr-color-accent);
+  --accent-hover: var(--gr-color-accent-hover);
+  --accent-dim: var(--gr-color-info-bg);
+  --border: var(--gr-color-border);
+  --success: var(--gr-color-success);
+  --success-dim: var(--gr-color-success-bg);
+  --danger: var(--gr-color-error);
+  --danger-dim: var(--gr-color-error-bg);
+  --muted-dim: var(--gr-color-bg-card-hover);
+  --radius: var(--gr-radius-sm);
 }
 
 *,

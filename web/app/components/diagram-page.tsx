@@ -1,5 +1,5 @@
 import { Suspense, lazy, useMemo, type ReactNode } from "react";
-import { Heading, Inline, Stack, Text, ScrollArea } from "@duro-app/ui";
+import { Heading, Inline, Stack, Text, ScrollArea } from "@greenharness/greenrack-ui";
 import type { DiagramResult } from "../api.server";
 import { DiagramDiffContext, useCompare } from "../lib/compare";
 import { DeltaPanel } from "./delta-panel";

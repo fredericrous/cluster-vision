@@ -1,5 +1,5 @@
 import { Outlet, useLocation, useNavigate } from "react-router";
-import { Heading, SideNav, Stack, Text } from "@duro-app/ui";
+import { Heading, SideNav, Stack, Text } from "@greenharness/greenrack-ui";
 import type { Route } from "./+types/layout";
 import {
   ApiError,

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useLocation, useNavigate, useRevalidator } from "react-router";
-import { Button, Callout, Inline, Stack, Text } from "@duro-app/ui";
+import { Button, Callout, Inline, Stack, Text } from "@greenharness/greenrack-ui";
 import { describeRouteError } from "../lib/route-error";
 
 /** While the API answers 503 (first cluster sync still running), re-run the

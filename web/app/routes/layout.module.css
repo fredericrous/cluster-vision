@@ -4,10 +4,10 @@
 }
 
 .sidebar {
-  /* holds-until: @duro-app/tokens ships a sidebar-width size token (DS gap, cluster-vision PR follow-ups) */
+  /* holds-until: @greenharness/greenrack-tokens ships a sidebar-width size token (DS gap, cluster-vision PR follow-ups) */
   width: 220px;
-  background: var(--duro-color-bg-card);
-  border-right: var(--duro-border-hairline) solid var(--duro-color-border);
+  background: var(--gr-color-bg-card);
+  border-right: var(--gr-border-hairline) solid var(--gr-color-border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -17,19 +17,19 @@
 }
 
 .header {
-  padding: 1.25rem var(--duro-spacing-md);
-  border-bottom: var(--duro-border-hairline) solid var(--duro-color-border);
+  padding: 1.25rem var(--gr-spacing-md);
+  border-bottom: var(--gr-border-hairline) solid var(--gr-color-border);
 }
 
 .navScroll {
   flex: 1;
   overflow-y: auto;
-  padding-bottom: var(--duro-spacing-sm);
+  padding-bottom: var(--gr-spacing-sm);
 }
 
 .content {
   flex: 1;
-  padding: var(--duro-spacing-xl);
+  padding: var(--gr-spacing-xl);
   min-width: 0;
   overflow-x: auto;
 }
@@ -44,7 +44,7 @@
     height: auto;
     position: static;
     border-right: none;
-    border-bottom: var(--duro-border-hairline) solid var(--duro-color-border);
+    border-bottom: var(--gr-border-hairline) solid var(--gr-color-border);
   }
 
   .navScroll {
@@ -53,13 +53,13 @@
   }
 
   .content {
-    padding: var(--duro-spacing-md);
+    padding: var(--gr-spacing-md);
   }
 }
 
 .licence {
-  padding: var(--duro-spacing-md);
-  border-top: var(--duro-border-hairline) solid var(--duro-color-border);
+  padding: var(--gr-spacing-md);
+  border-top: var(--gr-border-hairline) solid var(--gr-color-border);
   flex-shrink: 0;
 }
 

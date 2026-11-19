@@ -23,8 +23,8 @@ export default defineConfig({
     // late discovery re-optimizes and reloads the page mid-session, and a
     // request caught in between fails with "504 Outdated Optimize Dep".
     include: [
-      "@duro-app/ui",
-      "@duro-app/ui/table",
+      "@greenharness/greenrack-ui",
+      "@greenharness/greenrack-ui/table",
       "@base-ui/react/separator",
       "@tanstack/react-table",
       "mermaid",

@@ -1,7 +1,7 @@
 import type { Route } from "./+types/topology";
 import { fetchDiagramsByPrefix } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
-import { Text } from "@duro-app/ui";
+import { Text } from "@greenharness/greenrack-ui";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Topology — Cluster Vision" }];
