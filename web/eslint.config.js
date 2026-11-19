@@ -111,9 +111,12 @@ export default [
     ],
   },
   ...base,
-  // The shared duro-stack presets carry the design-system rules AND the parts
-  // that live in no plugin — the import policy behind ADR-0002 and ADR-0006,
-  // and the a11y test selectors. The plugin alone carried only the first.
+  // The shared presets carry the design-system rules AND the parts that live
+  // in no plugin. `react`, from @greenharness/greenrack-eslint-config, holds
+  // the design-system rules and the UI-library import bans (ADR-0002,
+  // ADR-0006); `base` and `tests`, from @aval-adr/eslint-config, hold the
+  // TypeScript conventions and the a11y test selectors. The plugin alone
+  // carried only the design-system rules.
   ...react.map((c) => ({ ...c, files: ["app/**/*.{ts,tsx}"], languageOptions })),
   ...tests,
   // The documented per-file raw-element exemptions above, applied last so they
