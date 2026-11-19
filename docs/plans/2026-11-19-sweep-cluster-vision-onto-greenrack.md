@@ -195,7 +195,7 @@ and `web/app/components/mermaid-diagram.tsx` (both exempted), and the test file
 eslint-plugin-react-hooks`, and the exit codes of `npm run typecheck`, `npm run
 lint` and `npm run test:run`, with the lint warning count and the test count. Save `npm audit --omit=dev --json` to the scratch dir; it exits 1 on any finding, so each commit compares advisory IDs against it, not the exit code.
 
-- [ ] Phase 1: DS 5.1 → 5.45, under the old names.
+- [x] Phase 1: DS 5.1 → 5.45, under the old names.
   - Files: `web/package.json` and `web/package-lock.json`. Typecheck or lint
     fallout under `web/app/**` is fixed only where a DS 5.x change requires it,
     and each fix cites the DS change. The 390 runs emulate a touch device
@@ -209,7 +209,7 @@ lint` and `npm run test:run`, with the lint warning count and the test count. Sa
     `@aval-adr/eslint-config` ^0.6.0 as a dependency, so print-config runs at
     this commit too.
   - Commit `chore(deps): Duro 5.45`.
-- [ ] Phase 2: DS 5.45 → 6.3.0, under `@duro-app`.
+- [x] Phase 2: DS 5.45 → 6.3.0, under `@duro-app`.
   - Files: `web/package.json`, `web/package-lock.json`,
     `web/eslint.config.js`, `greengate.conf`, and lint fallout under
     `web/app/**`. Each fallout fix names the rule and the preset that brought
@@ -227,7 +227,7 @@ lint` and `npm run test:run`, with the lint warning count and the test count. Sa
   - `greengate.conf`'s doctor row becomes `npx -y @duro-app/cli@^6 doctor`,
     then `greengate trust`.
   - Commit `chore(deps): Duro 6.3`.
-- [ ] Phase 3: the rename to greenrack 7.0.1.
+- [x] Phase 3: the rename to greenrack 7.0.1.
   - (a) Write the allowlist to a `mktemp` file outside the tree, one pathspec
     per line: `docs/plans/**`, `.adr/packs/**`, `.claude/skills/**` and
     `.gitignore`.
@@ -316,15 +316,30 @@ lint` and `npm run test:run`, with the lint warning count and the test count. Sa
 
 | Check | Expected | Observed |
 | --- | --- | --- |
-| `npm run typecheck && npm run lint && npm run test:run && npm run build` in `web/` at the baseline and after commits 1–3 | exit 0; lint errors 0, warnings no higher than the baseline; same test count | |
-| `npm ls` greenrack-ui, -eslint-config, -eslint-plugin, `@aval-adr/eslint-config`, `eslint-plugin-react-hooks` | one copy each; no `@duro-app` package; no `git.daddyshome.fr`; `npm audit --omit=dev` no new finding | |
-| `print-config` `jq -S '.rules'` on the six files at baseline, c1, c2, c3 | the same bans per file (a moved rule id is fine); the nine raw-element allow lists unchanged | |
-| `browser-check` (haiku) on the production build over the frozen API, after each commit, against the previous one: 23 routes plus the API-down `/topology` error state at 1280 and 390, diagram node counts and sizes, sidebar/surface/flow-node computed styles, SideNav item and sort-button hover and focus-visible | no measured difference except the 5.45 coarse-pointer change at c1, recorded in the PR; flow-node height equals `NODE_H` (44) under touch emulation, no overlapping node boxes; no new console error; 0 undefined `var()` | |
-| `sweep-app.sh --check --allow <file> <wt>` | exit 0 | |
-| hook entries in `.claude/settings.json` | one greenrack entry per event, plus `aval-heads` | |
+| `npm run typecheck && npm run lint && npm run test:run && npm run build` in `web/` at the baseline and after commits 1–3 | exit 0; lint errors 0, warnings no higher than the baseline; same test count | baseline 2675fa8, c1 4c333dc, c2 f88e9fc, c3 65928a4, review fix e159bfb: typecheck 0; lint 0 errors 0 warnings (baseline 0/0); tests 42 passed at each; build 0 |
+| `npm ls` greenrack-ui, -eslint-config, -eslint-plugin, `@aval-adr/eslint-config`, `eslint-plugin-react-hooks` | one copy each; no `@duro-app` package; no `git.daddyshome.fr`; `npm audit --omit=dev` no new finding | greenrack-ui, -tokens, -eslint-plugin, -eslint-config 7.0.1, `@aval-adr/eslint-config` 0.17.0, `eslint-plugin-react-hooks` 7.1.1: one copy each (eslint-plugin one copy from c1 on); no `@duro-app` package or `git.daddyshome.fr` in the lock; every `resolved` on registry.npmjs.org; lockfileVersion 3; `npm audit --omit=dev` 0 advisories at baseline and every commit |
+| `print-config` `jq -S '.rules'` on the six files at baseline, c1, c2, c3 | the same bans per file (a moved rule id is fine); the nine raw-element allow lists unchanged | bans equal on all six files at c1, c2, c3. UI and Lexical bans moved `@typescript-eslint/` → `duro/` (c2) → `greenrack/no-restricted-imports` (c3), contents equal, only the message names the new package. At c1 the DS dropped its own `duro/no-flex-grow-web` (a warn-level design rule, removed upstream in 5.x, not a ban) and added `duro/no-raw-layer-values`. `web/test/compare-bar.test.tsx` unchanged at every commit. Nine allow lists unchanged |
+| `browser-check` (haiku) on the production build over the frozen API, after each commit, against the previous one: 23 routes plus the API-down `/topology` error state at 1280 and 390, diagram node counts and sizes, sidebar/surface/flow-node computed styles, SideNav item and sort-button hover and focus-visible | no measured difference except the 5.45 coarse-pointer change at c1, recorded in the PR; flow-node height equals `NODE_H` (44) under touch emulation, no overlapping node boxes; no new console error; 0 undefined `var()` | 25 captures × 2 widths per build (configs-390 too tall to screenshot at every build; its JSON compared). c1 vs baseline: the DS 5.45 SideNav opens the current page's group and marks the page (sidebar 248 → 277–335px tall, Tab order gains that item), accepted by the person at commit 1; at 390 buttons are 44px (Retry 28 → 44px); table pages 2px taller at 1280; diagrams identical (topology, network, security mermaid sizes; flow 175 nodes, 181 edges, computed node height 44px = `NODE_H`, bbox overlap count 152 as baseline). c2 and c3 pixel-equal to the previous commit except ≤51px react-flow edge noise. Compare mode: Before/After Selects open 52 options, keyboard selection returns focus, 540 changes. Console: only the intended 404 and 502. Undefined `var()`: 0 outside @xyflow's optional `--xy-*` (48 at every commit); c3 CSS references 52 `--gr-*`, 0 `--duro-` |
+| `sweep-app.sh --check --allow <file> <wt>` | exit 0 | exit 0 (counts before the rewrite: npm-name 52, css-var 99, eslint-rule 3, others 0) |
+| hook entries in `.claude/settings.json` | one greenrack entry per event, plus `aval-heads` | SessionStart `greenrack-catalog.sh` + `aval-heads.sh`; UserPromptSubmit `greenrack-plan.sh`; `duro-*.sh` removed by the installer; hooks hold no `@duro-app`; after one hook run `git status --porcelain .claude` shows only the intended changes (new cache glob `.greenrack-session.cache*` ignored) |
 | PR CI: `image` smoke job `conclusion` | success | |
 | Phase 4 cluster: HelmRelease; pod after 30 min; refresh and EAM sync; `@duro-app` / `--duro-` count in served assets | Ready at 0.26.0, 0 restarts; complete refresh, 0 EAM errors; both counts 0 | |
 
+## Implementation review
+
+- implementation-review: approve-with-changes, delta approve-with-changes; plan record, SideNav, dropped DS rule, pack refresh and dependency ownership all written here and in the PR body; candidates 3 fine, `@aval-adr` argued in the PR (77k, 74 s; 46k, 25 s; 51k, 63 s).
+- backend: approve-with-changes, then approve; the five generated-hook findings are deliberate: greenrack's template (f08, inbox) (69k, 36 s; 25k, 21 s).
+- lang:typescript: approve; the presets' sources comment fixed in e159bfb (68k, 51 s).
+- react: approve, no findings (39k, 12 s).
+- ui-design (interface-review): approve, nothing introduced; one older stale comment filed to the inbox (92k, 160 s).
+
 ## Decision log
+
+- 2026-11-19 — Start: the fleet pack was behind (`aval add --check` exit 1), so the branch opens with `chore(adr): refresh the fleet pack` (ADR-0077, ADR-0078 `work.programme-map`), as worktree-task's Start step does; it is not a sweep change.
+- 2026-11-19 — Frozen API: diagrams, config, snapshots and one compare pair (before 2637fe23, after a77221b9: 171 added, 88 removed, 281 changed) captured through a port-forward to the live API and served by a handler script bound to 127.0.0.1. Its log showed only the 404s the interactive Select step causes by navigating to snapshots that were not frozen.
+- 2026-11-19 — Flow-node check method: at fit-view zoom the 175 nodes measure 23×4px, so "no overlapping boxes" cannot be read from bounding boxes. The node's computed `height` (44px = `NODE_H`) is the check, and the bbox overlap count (152) is compared against the baseline's own count.
+- 2026-11-19 — Commit 1 (DS 5.45): besides the 44px touch buttons at 390, the SideNav changed. 5.1 kept every group closed and marked no page; 5.45 opens the current page's group and marks the page with the accent bar. The person accepted it as the DS's change; later commits compare against c1.
+- 2026-11-19 — `@aval-adr/eslint-config` ^0.17.0 is a direct devDependency from c2: web/.npmrc sets `legacy-peer-deps=true`, so the DS 6 config's peer would never be installed. It was already in the tree at 0.6.0 through eslint-config 5.45. The other three manifest entries (`@greenharness/greenrack-ui`, `-eslint-config`, `-eslint-plugin` ^7.0.1) are renames of the `@duro-app` packages the app already owned, continuing their version line (ADR-0076): no new dependency, the same owners. Ownership of `@aval-adr/eslint-config` (the PR body carries it, `package.json` cannot): dev-only (lint), no install script; it pulls `@eslint/js`, `@effect/eslint-plugin`, `eslint-config-prettier` and `@eslint-community/eslint-plugin-eslint-comments`, the first three already in the tree through the DS 5.x config; published by the fleet's own adr-lint (greenspotter) repository, 8 releases from 2026-10-30 to 11-08; if abandoned, the same rules ship as `@greenharness/greenspotter-eslint-config` (ADR-0076), and a stale copy only stops lint updates, never the build or the image.
+- 2026-11-19 — Implementation review: the generated `greenrack-catalog.sh` findings (temp-file race, silent first-run failure, no timeout on npx, floating `@^7`) are greenrack's: the file is generated and says not to hand-edit it. The race is f08; the rest go to the inbox as greenrack follow-ups. The exact doctor pin was already rejected at plan review (fleet runs `@^7`).
 
 <!-- panel: repos=cluster-vision,homelab,decisions adds= reviewers=backend,lang:typescript,platform,react,tui,ui-design,unix,codex body-sha=b3691aabaaf4 -->
