@@ -1,4 +1,5 @@
-import { base, react, tests } from "@duro-app/eslint-config";
+import { base, tests } from "@aval-adr/eslint-config";
+import { react } from "@duro-app/eslint-config";
 import tsParser from "@typescript-eslint/parser";
 
 const languageOptions = {
