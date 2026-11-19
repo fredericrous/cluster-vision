@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Badge, Button, Callout, Inline, Stack, Text } from "@duro-app/ui";
+import { Badge, Button, Callout, Inline, Stack, Text } from "@greenharness/greenrack-ui";
 import type { Change, DiagramDiff } from "../api.server";
 
 function glyph(op: Change["op"]) {

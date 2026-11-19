@@ -1,6 +1,6 @@
 import type { Route } from "./+types/home";
 import { fetchConfig, fetchDiagrams, fetchSnapshots, type Snapshot } from "../api.server";
-import { Badge, Button, Card, Grid, Heading, Inline, Stack, Text } from "@duro-app/ui";
+import { Badge, Button, Card, Grid, Heading, Inline, Stack, Text } from "@greenharness/greenrack-ui";
 import { Separator } from "@base-ui/react/separator";
 import { Link, useNavigate } from "react-router";
 import { formatWhen, shortSha } from "../lib/compare";

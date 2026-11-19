@@ -7,11 +7,11 @@ import {
   ScrollRestoration,
 } from "react-router";
 
-import { Heading, PageShell, Stack, Text, ThemeProvider } from "@duro-app/ui";
-import "@duro-app/ui/reset.css";
-// StyleX-compiled atomic class styles for every @duro-app/ui component.
+import { Heading, PageShell, Stack, Text, ThemeProvider } from "@greenharness/greenrack-ui";
+import "@greenharness/greenrack-ui/reset.css";
+// StyleX-compiled atomic class styles for every @greenharness/greenrack-ui component.
 // Without this, JSX uses class names like x1ghz6dp/x1717udv with no backing CSS rules.
-import "@duro-app/ui/dist/index.css";
+import "@greenharness/greenrack-ui/dist/index.css";
 import type { Route } from "./+types/root";
 import "./app.css";
 

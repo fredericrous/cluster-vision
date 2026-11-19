@@ -10,13 +10,13 @@
 
 .container :global(.react-flow__controls) {
   background: var(--bg-tertiary);
-  border: var(--duro-border-hairline) solid var(--border);
-  border-radius: var(--duro-radius-px6);
+  border: var(--gr-border-hairline) solid var(--border);
+  border-radius: var(--gr-radius-px6);
 }
 
 .container :global(.react-flow__controls-button) {
   background: var(--bg-tertiary);
-  border-bottom: var(--duro-border-hairline) solid var(--border);
+  border-bottom: var(--gr-border-hairline) solid var(--border);
   fill: var(--text-secondary);
 }
 
@@ -26,8 +26,8 @@
 
 .container :global(.react-flow__minimap) {
   background: var(--bg-primary);
-  border: var(--duro-border-hairline) solid var(--border);
-  border-radius: var(--duro-radius-px6);
+  border: var(--gr-border-hairline) solid var(--border);
+  border-radius: var(--gr-radius-px6);
 }
 
 .container :global(.react-flow__edge-path) {
@@ -41,22 +41,22 @@
 }
 
 .container :global(.react-flow__handle) {
-  width: var(--duro-size-indicator-dot);
-  height: var(--duro-size-indicator-dot);
+  width: var(--gr-size-indicator-dot);
+  height: var(--gr-size-indicator-dot);
   background: var(--text-muted);
   border: none;
 }
 
 .legend {
   position: absolute;
-  bottom: var(--duro-spacing-ms);
-  left: var(--duro-spacing-ms);
+  bottom: var(--gr-spacing-ms);
+  left: var(--gr-spacing-ms);
   display: flex;
-  gap: var(--duro-spacing-ms);
-  padding: var(--duro-spacing-sm) var(--duro-spacing-ms);
+  gap: var(--gr-spacing-ms);
+  padding: var(--gr-spacing-sm) var(--gr-spacing-ms);
   background: var(--bg-primary);
-  border: var(--duro-border-hairline) solid var(--border);
-  border-radius: var(--duro-radius-px6);
+  border: var(--gr-border-hairline) solid var(--border);
+  border-radius: var(--gr-radius-px6);
   font-size: 0.7rem;
   color: var(--text-secondary);
   z-index: 5;
@@ -66,13 +66,13 @@
 .legendItem {
   display: flex;
   align-items: center;
-  gap: var(--duro-spacing-xs);
+  gap: var(--gr-spacing-xs);
 }
 
 .legendSwatch {
-  width: var(--duro-size-glyph-xs);
-  height: var(--duro-size-glyph-xs);
-  border-radius: var(--duro-radius-xs);
+  width: var(--gr-size-glyph-xs);
+  height: var(--gr-size-glyph-xs);
+  border-radius: var(--gr-radius-xs);
 }
 
 

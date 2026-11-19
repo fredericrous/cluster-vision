@@ -4,7 +4,7 @@ import { fetchDiagram } from "../api.server";
 import { DiagramPage } from "../components/diagram-page";
 import { DataTable, ExploitBadge, OutdatedBadge, PinBadge, SecurityBadge } from "../components/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Text, Tooltip } from "@duro-app/ui";
+import { Text, Tooltip } from "@greenharness/greenrack-ui";
 
 interface ImageRow {
   image: string;
@@ -104,9 +104,9 @@ const columns: ColumnDef<ImageRow, string>[] = [
   {
     accessorKey: "namespaces",
     header: "Namespaces",
-    // Was minmax(200px, 400px). Duro has no 200px column token; gridColSm
+    // Was minmax(200px, 400px). greenrack has no 200px column token; gridColSm
     // (240px) is the column-width token, so the minimum grows 40px.
-    // holds-until: @duro-app/tokens ships a narrower column-width size token
+    // holds-until: @greenharness/greenrack-tokens ships a narrower column-width size token
     // (DS gap, cluster-vision PR follow-ups).
     meta: { width: "minmax(gridColSm, dialogSm)" },
   },

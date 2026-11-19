@@ -1,4 +1,5 @@
-import { base, react, tests } from "@duro-app/eslint-config";
+import { base, tests } from "@aval-adr/eslint-config";
+import { react } from "@greenharness/greenrack-eslint-config";
 import tsParser from "@typescript-eslint/parser";
 
 const languageOptions = {
@@ -11,7 +12,7 @@ const languageOptions = {
 };
 
 /**
- * `duro/no-raw-html-element` assumes an app that has adopted react-strict-dom
+ * `greenrack/no-raw-html-element` assumes an app that has adopted react-strict-dom
  * end to end. This one has not, and cannot today: importing `react-strict-dom`
  * in app code throws at module scope —
  *
@@ -20,17 +21,17 @@ const languageOptions = {
  *
  * — because RSD's own dist declares its default element styles with
  * `stylex.create` and expects the consumer's Babel to compile them. This app
- * has no StyleX/Babel pipeline; it consumes @duro-app/ui's *precompiled* bundle
+ * has no StyleX/Babel pipeline; it consumes @greenharness/greenrack-ui's *precompiled* bundle
  * (which contains zero react-strict-dom references) and styles its own
- * containers with CSS modules over the published `--duro-*` custom properties.
+ * containers with CSS modules over the published `--gr-*` custom properties.
  * Adopting `css.create()` here would not work either: token variable names are
  * hashed against the compiling package's rootDir, so app-compiled tokens would
- * never match the names in `@duro-app/ui/dist/index.css`.
+ * never match the names in `@greenharness/greenrack-ui/dist/index.css`.
  *
- * So the migration target here is the Duro component set, not `html.*`.
- * Everything that maps onto a Duro component has been migrated. What stays raw
+ * So the migration target here is the greenrack component set, not `html.*`.
+ * Everything that maps onto a greenrack component has been migrated. What stays raw
  * is scoped per file below: document shell, sized/surface containers that need
- * real CSS, DOM a third-party library owns, and the few elements Duro has no
+ * real CSS, DOM a third-party library owns, and the few elements greenrack has no
  * component for. The rule still gates every other file, which is where new
  * markup gets written.
  *
@@ -39,14 +40,14 @@ const languageOptions = {
  */
 const rawElementExceptions = [
   {
-    // react-router renders the document itself. <main>/<pre> have no Duro
+    // react-router renders the document itself. <main>/<pre> have no greenrack
     // equivalent (Text variant="code" is monospace but not whitespace-preserving).
     files: ["app/root.tsx"],
     allow: ["html", "head", "body", "meta", "main", "pre"],
   },
   {
     // App chrome: sticky 220px rail with media queries (CSS module), plus the
-    // mailto anchor in the licence footer -- Duro has no anchor component, same
+    // mailto anchor in the licence footer -- greenrack has no anchor component, same
     // reason compare-bar.tsx is exempted below.
     files: ["app/routes/layout.tsx"],
     allow: ["div", "main", "a"],
@@ -60,7 +61,7 @@ const rawElementExceptions = [
   {
     // Mermaid renders an SVG string into a ref'd node via innerHTML; <details>
     // is a native disclosure and <pre> a whitespace-preserving block, neither
-    // of which Duro covers.
+    // of which greenrack covers.
     files: ["app/components/mermaid-diagram.tsx"],
     allow: ["div", "details", "summary", "pre"],
   },
@@ -93,7 +94,7 @@ const rawElementExceptions = [
     allow: ["div", "aside"],
   },
   {
-    // External compare links (forge "compare A...B" pages) — Duro has no
+    // External compare links (forge "compare A...B" pages) — greenrack has no
     // anchor component.
     files: ["app/components/compare-bar.tsx"],
     allow: ["a"],
@@ -110,9 +111,12 @@ export default [
     ],
   },
   ...base,
-  // The shared duro-stack presets carry the design-system rules AND the parts
-  // that live in no plugin — the import policy behind ADR-0002 and ADR-0006,
-  // and the a11y test selectors. The plugin alone carried only the first.
+  // The shared presets carry the design-system rules AND the parts that live
+  // in no plugin. `react`, from @greenharness/greenrack-eslint-config, holds
+  // the design-system rules and the UI-library import bans (ADR-0002,
+  // ADR-0006); `base` and `tests`, from @aval-adr/eslint-config, hold the
+  // TypeScript conventions and the a11y test selectors. The plugin alone
+  // carried only the design-system rules.
   ...react.map((c) => ({ ...c, files: ["app/**/*.{ts,tsx}"], languageOptions })),
   ...tests,
   // The documented per-file raw-element exemptions above, applied last so they
@@ -121,6 +125,6 @@ export default [
   ...rawElementExceptions.map(({ files, allow }) => ({
     files,
     languageOptions,
-    rules: { "duro/no-raw-html-element": ["error", { allow }] },
+    rules: { "greenrack/no-raw-html-element": ["error", { allow }] },
   })),
 ];

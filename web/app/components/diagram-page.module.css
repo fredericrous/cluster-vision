@@ -2,30 +2,30 @@
   max-width: 100%;
   display: flex;
   flex-direction: column;
-  gap: var(--duro-spacing-lg);
+  gap: var(--gr-spacing-lg);
 }
 
 .flowPage {
   max-width: 100%;
   display: flex;
   flex-direction: column;
-  gap: var(--duro-spacing-lg);
-  height: calc(100vh - 2 * var(--duro-spacing-xl));
+  gap: var(--gr-spacing-lg);
+  height: calc(100vh - 2 * var(--gr-spacing-xl));
 }
 
 .content {
-  background: var(--duro-color-bg-card);
-  border: var(--duro-border-hairline) solid var(--duro-color-border);
-  border-radius: var(--duro-radius-sm);
-  padding: var(--duro-spacing-lg);
+  background: var(--gr-color-bg-card);
+  border: var(--gr-border-hairline) solid var(--gr-color-border);
+  border-radius: var(--gr-radius-sm);
+  padding: var(--gr-spacing-lg);
 }
 
 .flowContent {
   flex: 1;
   min-height: 0;
-  background: var(--duro-color-bg-card);
-  border: var(--duro-border-hairline) solid var(--duro-color-border);
-  border-radius: var(--duro-radius-sm);
+  background: var(--gr-color-bg-card);
+  border: var(--gr-border-hairline) solid var(--gr-color-border);
+  border-radius: var(--gr-radius-sm);
   position: relative;
 }
 
@@ -33,10 +33,10 @@
    the primary artifact on small screens, so it stacks first there. */
 .compareLayout {
   display: grid;
-  /* holds-until: @duro-app/tokens ships a 320px panel size token, or this
+  /* holds-until: @greenharness/greenrack-tokens ships a 320px panel size token, or this
      moves to Grid layout="split" (DS gap, cluster-vision PR follow-ups) */
   grid-template-columns: minmax(0, 1fr) 320px;
-  gap: var(--duro-spacing-md);
+  gap: var(--gr-spacing-md);
   flex: 1;
   min-height: 0;
 }
@@ -54,15 +54,15 @@
 }
 
 .comparePanel {
-  background: var(--duro-color-bg-card);
-  border: var(--duro-border-hairline) solid var(--duro-color-border);
-  border-radius: var(--duro-radius-sm);
-  padding: var(--duro-spacing-md);
+  background: var(--gr-color-bg-card);
+  border: var(--gr-border-hairline) solid var(--gr-color-border);
+  border-radius: var(--gr-radius-sm);
+  padding: var(--gr-spacing-md);
   overflow-y: auto;
   max-height: calc(100vh - 8rem);
 }
 
-/* holds-until: this collapse moves onto a Duro breakpoint (md 768 / lg 1024)
+/* holds-until: this collapse moves onto a greenrack breakpoint (md 768 / lg 1024)
    or Grid layout="split" (DS gap, cluster-vision PR follow-ups) */
 @media (max-width: 900px) {
   .compareLayout {

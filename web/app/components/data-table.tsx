@@ -19,8 +19,8 @@ import {
   Stack,
   Text,
   Tooltip,
-} from "@duro-app/ui";
-import { Table } from "@duro-app/ui/table";
+} from "@greenharness/greenrack-ui";
+import { Table } from "@greenharness/greenrack-ui/table";
 import { indexChanges, rowKey, useDiagramDiff } from "../lib/compare";
 
 declare module "@tanstack/react-table" {
@@ -30,7 +30,7 @@ declare module "@tanstack/react-table" {
   // `^_` escape the unused-vars rule offers is not available.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface ColumnMeta<TData, TValue> {
-    /** grid-template-columns track for this column, in Duro size tokens,
+    /** grid-template-columns track for this column, in greenrack size tokens,
      *  e.g. 'minmax(gridColSm, 1fr)'. */
     width?: ComponentProps<typeof Table.HeaderCell>["width"];
     /** Clip overflowing cell text to a single line with an ellipsis. */
@@ -290,7 +290,7 @@ function SortableHeader<T>({
       }
     >
       <Inline gap="xs" align="center">
-        {/* Button variant="link" paints its content accent-blue. Duro styles
+        {/* Button variant="link" paints its content accent-blue. greenrack styles
             HeaderCell muted/600 by design, so restore that here — otherwise
             every column header reads as a blue link. */}
         <Text variant="caption" color="muted" weight="semibold">
