@@ -1,4 +1,4 @@
-import { base, tests } from "@aval-adr/eslint-config";
+import { base, tests, greenspotter } from "@greenharness/greenspotter-eslint-config";
 import { react } from "@greenharness/greenrack-eslint-config";
 import tsParser from "@typescript-eslint/parser";
 
@@ -114,7 +114,7 @@ export default [
   // The shared presets carry the design-system rules AND the parts that live
   // in no plugin. `react`, from @greenharness/greenrack-eslint-config, holds
   // the design-system rules and the UI-library import bans (ADR-0002,
-  // ADR-0006); `base` and `tests`, from @aval-adr/eslint-config, hold the
+  // ADR-0006); `base` and `tests`, from @greenharness/greenspotter-eslint-config, hold the
   // TypeScript conventions and the a11y test selectors. The plugin alone
   // carried only the design-system rules.
   ...react.map((c) => ({ ...c, files: ["app/**/*.{ts,tsx}"], languageOptions })),
@@ -127,4 +127,5 @@ export default [
     languageOptions,
     rules: { "greenrack/no-raw-html-element": ["error", { allow }] },
   })),
+  ...greenspotter(),
 ];
