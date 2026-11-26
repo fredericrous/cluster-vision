@@ -28,7 +28,7 @@ declare module "@tanstack/react-table" {
   // TypeScript rejects any rename or omission with "All declarations of
   // 'ColumnMeta' must have identical type parameters" (TS2428), so the
   // `^_` escape the unused-vars rule offers is not available.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- declaration merging requires these exact type parameters (TS2428)
   interface ColumnMeta<TData, TValue> {
     /** grid-template-columns track for this column, in greenrack size tokens,
      *  e.g. 'minmax(gridColSm, 1fr)'. */

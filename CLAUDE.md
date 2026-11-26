@@ -9,8 +9,8 @@ Not restated here. They are vendored from the fleet corpus and the session
 hook prints the current ones; ask for any of them by name:
 
 ```console
-$ aval resolve ui.design-system --scope duro-stack
-$ aval heads
+$ greentopo resolve ui.design-system --scope duro-stack
+$ greentopo heads
 ```
 
 **The scope matters more here than anywhere else in the fleet**, because this
@@ -20,9 +20,9 @@ scope `effect-stack`, which is `web/` and nothing else. The Go backend is not
 in that scope, and asking without one says so:
 
 ```console
-$ aval resolve stack.sql-layer          # no scope
+$ greentopo resolve stack.sql-layer          # no scope
 undecided   no accepted decision for stack.sql-layer     # exit 4
-$ aval resolve stack.sql-layer --scope effect-stack
+$ greentopo resolve stack.sql-layer --scope effect-stack
 active      decisions:ADR-0002   @effect/sql              # exit 0
 ```
 
@@ -34,12 +34,12 @@ the whole repository.
 This repository keeps no records of its own. A local record deciding a slot the
 pack decides is a contradiction, not a preference: change it in
 [`fredericrous/decisions`](https://github.com/fredericrous/decisions) and run
-`aval add github:fredericrous/decisions` here.
+`greentopo add github:fredericrous/decisions` here.
 
 **One known gap.** `ui.policy-enforcement` resolves to the shared flat config;
 `web/` still wires the older plugin-plus-preset arrangement, which ADR-0007
 describes as kept working rather than developed. That is real drift from a
-decision that stands. `aval` does not flag it — `status:` records approval and
+decision that stands. `greentopo` does not flag it — `status:` records approval and
 never implementation — so it is written down here instead of being quietly
 true.
 

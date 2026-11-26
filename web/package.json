@@ -34,10 +34,10 @@
     "react-strict-dom": "^0.0.55"
   },
   "devDependencies": {
-    "@aval-adr/eslint-config": "^0.17.0",
+    "@greenharness/greenspotter-eslint-config": "^0.20.1",
     "@effect/language-service": "0.87.5",
-    "@greenharness/greenrack-eslint-config": "^7.11.0",
-    "@greenharness/greenrack-eslint-plugin": "^7.11.0",
+    "@greenharness/greenrack-eslint-config": "^7.12.0",
+    "@greenharness/greenrack-eslint-plugin": "^7.12.0",
     "@react-router/dev": "^7.18.4",
     "@rolldown/plugin-babel": "^0.2.2",
     "@testing-library/dom": "^10.4.1",
