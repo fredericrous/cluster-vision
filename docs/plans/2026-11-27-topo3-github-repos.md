@@ -1,7 +1,7 @@
 ---
 canonical: decisions:docs/plans/2026-11-27-topo3-github-repos.md
 phases: [2]
-status: active
+status: done
 branch: chore/t25-topo3
 repos: [cluster-vision]
 ---
@@ -14,3 +14,6 @@ script.
 
 ## Code review
 - cluster-vision: none — CI pin, re-vendored pack, regenerated hook, one comment, no code
+
+## Implementation review
+- implementation-review (opus): approve (56k, 38 s): low, tick Phase 2 at close.
